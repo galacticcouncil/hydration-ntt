@@ -1,3 +1,7 @@
+> ## 🌊 Hydration NTT deployment
+>
+> This fork carries the **Hydration ↔ Wormhole NTT deployments** (DAI, ETH, SOL, jitoSOL). Everything deployment-related lives in [`ops/`](ops/) — start with the runbook [`ops/DEPLOYMENT.md`](ops/DEPLOYMENT.md), architecture in [`ops/SCHEMA.md`](ops/SCHEMA.md), per-token records in [`ops/tokens/`](ops/tokens/). The rest of this repo is upstream [native-token-transfers](https://github.com/wormhole-foundation/native-token-transfers).
+
 <div align="center">
   <img src="images/ntt-logo.png">
 </div>
