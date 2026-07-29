@@ -38,7 +38,11 @@ contract DeployWormholeNtt is Script, DeployWormholeNttBase {
         (bool success, bytes memory queriedDecimals) =
             token.staticcall(abi.encodeWithSignature("decimals()"));
 
-        if (success) {
+        // A codeless token (runtime precompile, e.g. Hydration's currencies
+        // precompile) makes the staticcall succeed with EMPTY returndata in
+        // forge's local EVM — abi.decode would revert. Treat that like the
+        // query failing so the mockCall fallback below applies.
+        if (success && queriedDecimals.length >= 32) {
             uint8 queriedDecimalsValue = abi.decode(queriedDecimals, (uint8));
             if (queriedDecimalsValue != decimals) {
                 console.log("Decimals mismatch: ", queriedDecimalsValue, " != ", decimals);
