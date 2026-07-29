@@ -29,6 +29,7 @@ node_modules
 .wormhole
 
 # Claude code
+.claude/settings.json
 .claude/settings.local.json
 docs/plans/
 
@@ -40,3 +41,10 @@ corpus/
 
 .deployments
 .ignore
+
+# Hydration fork — local NTT CLI + deploy run artifacts (durable records live in ops/)
+.ntt-cli/
+.deployments/
+overrides.json
+evm/broadcast/
+evm/last-run.stdout
