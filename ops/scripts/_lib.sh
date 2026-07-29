@@ -7,6 +7,7 @@ NTT_SRC="${NTT_SRC:-$(cd "$HYD_ROOT/.." && pwd)}"
 
 ETH_RPC="${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}"
 HYDRATION_RPC="${HYDRATION_RPC:-https://hydration-rpc.n.dwellir.com}"
+SOLANA_RPC="${SOLANA_RPC:-https://api.mainnet-beta.solana.com}"
 
 confirm() {
   read -r -p "$1 [yes/NO] " reply
@@ -49,7 +50,8 @@ write_overrides() {
 {
   "chains": {
     "Ethereum":  { "rpc": "$ETH_RPC" },
-    "Hydration": { "rpc": "$HYDRATION_RPC" }
+    "Hydration": { "rpc": "$HYDRATION_RPC" },
+    "Solana":    { "rpc": "$SOLANA_RPC" }
   }
 }
 EOF

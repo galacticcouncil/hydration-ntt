@@ -1,0 +1,48 @@
+{
+  "network": "Mainnet",
+  "chains": {
+    "Solana": {
+      "version": "3.0.0",
+      "mode": "locking",
+      "paused": false,
+      "owner": "6db8TCH51fK4Pq2LkBdMaMFPfXD17GjfLD8TaMPWNuiq",
+      "manager": "DiGxk55uAQNVzzg2FucPgdrQ4azb5SDvWQvzpzJD3o7J",
+      "token": "So11111111111111111111111111111111111111112",
+      "transceivers": {
+        "threshold": 1,
+        "wormhole": {
+          "address": "5J12e7mMcbbN3VkCrUPfZp2bDHMH3t1rKvxGcwuN53wx"
+        }
+      },
+      "limits": {
+        "outbound": "10000.000000000",
+        "inbound": {
+          "Hydration": "10000.000000000"
+        }
+      }
+    },
+    "Hydration": {
+      "version": "2.0.0",
+      "mode": "burning",
+      "paused": false,
+      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "manager": "0x9e200C0f28D92D296b201D96C8269d3CAFFfA9FF",
+      "token": "0x00000000000000000000000000000001000F4530",
+      "transceivers": {
+        "threshold": 1,
+        "wormhole": {
+          "address": "0x2F04AcF249091425d51e67EeA3C3161ccE283202",
+          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+        }
+      },
+      "limits": {
+        "outbound": "184467440737.000000000",
+        "inbound": {
+          "Solana": "184467440737.000000000"
+        }
+      },
+      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "managerVariant": "standard"
+    }
+  }
+}
