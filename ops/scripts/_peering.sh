@@ -3,7 +3,7 @@
 # Read-only (cast call) — no keys, no txs. Per token, both directions:
 #
 #   manager.token()        == deployment token
-#   manager.getMode()      == locking(0) on Ethereum / burning(1) on Hydration
+#   manager.getMode()      == locking(0) on the hub / burning(1) on Hydration
 #   manager.getPeer(peerChainId)          == peer manager (bytes32) + peer token decimals
 #   transceiver.getWormholePeer(peerId)   == peer transceiver (bytes32)
 #   manager.getTransceivers()             includes own transceiver
@@ -18,7 +18,10 @@
 # (["peer"/"transceiver_peer", chainId BE] — seeds from solana/…/peer.rs) and
 # reading them over JSON-RPC, no solana CLI needed.
 #
-# Usage: scripts/peering.sh [token ...]   # default: every tokens/<t>/deployment.json
+# The EVM hub chain is read from deployment.json (Ethereum, Base, …) — its
+# RPC comes from hub_rpc() below; add a line there when a new hub chain lands.
+#
+# Usage: scripts/_peering.sh [token ...]   # default: every tokens/<t>/deployment.json
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
@@ -140,49 +143,62 @@ check_sol_hub() {
   ck "Solana transceiver peer PDA → Hydration transceiver" "$(b32 "$ht")" "$tpeer"
 }
 
+hub_rpc() {  # EVM hub chain name → RPC url (extend when a new hub chain lands)
+  case "$1" in
+    Ethereum) echo "$ETH_RPC" ;;
+    Base)     echo "$BASE_RPC" ;;
+    *) return 1 ;;
+  esac
+}
+
 check_token() {
   local t=$1 dep="$HYD_ROOT/tokens/$1/deployment.json"
   [ -f "$dep" ] || { echo "== $t: no deployment.json — skipping"; return; }
-  local em et hm ht
-  em=$(jq -r '.chains.Ethereum.manager // empty' "$dep")
+  local hub hm
   hm=$(jq -r '.chains.Hydration.manager // empty' "$dep")
   [ -n "$hm" ] || { echo "== $t: no Hydration leg — skipping"; return; }
-  if [ -z "$em" ]; then
+  hub=$(jq -r '.chains | keys[] | select(. != "Hydration")' "$dep" | head -1)
+  [ -n "$hub" ] || { echo "== $t: no hub leg — skipping"; return; }
+  if [ "$hub" = "Solana" ]; then
     check_sol_hub "$t" "$dep" "$hm"
     return
   fi
-  et=$(jq -r '.chains.Ethereum.transceivers.wormhole.address' "$dep")
+  local hrpc
+  hrpc=$(hub_rpc "$hub") || { echo "== $t: no RPC configured for hub chain '$hub' — skipping"; return; }
+  local em et ht etok htok
+  em=$(jq -r --arg c "$hub" '.chains[$c].manager // empty' "$dep")
+  [ -n "$em" ] || { echo "== $t: hub leg '$hub' not deployed — skipping"; return; }
+  et=$(jq -r --arg c "$hub" '.chains[$c].transceivers.wormhole.address' "$dep")
   ht=$(jq -r '.chains.Hydration.transceivers.wormhole.address' "$dep")
-  local etok htok
-  etok=$(jq -r '.chains.Ethereum.token' "$dep")
+  etok=$(jq -r --arg c "$hub" '.chains[$c].token' "$dep")
   htok=$(jq -r '.chains.Hydration.token' "$dep")
 
-  local eth_id hyd_id edec hdec
-  eth_id=$(call "$em" 'chainId()(uint16)' "$ETH_RPC")
+  local hub_id hyd_id edec hdec
+  hub_id=$(call "$em" 'chainId()(uint16)' "$hrpc")
   hyd_id=$(call "$hm" 'chainId()(uint16)' "$HYDRATION_RPC")
-  edec=$(call "$etok" 'decimals()(uint8)' "$ETH_RPC")
+  edec=$(call "$etok" 'decimals()(uint8)' "$hrpc")
   hdec=$(call "$htok" 'decimals()(uint8)' "$HYDRATION_RPC")
-  echo "== $t  (wormhole chain ids: Ethereum=$eth_id Hydration=$hyd_id)"
+  echo "== $t  (wormhole chain ids: $hub=$hub_id Hydration=$hyd_id)"
 
-  # Ethereum side
-  ck "Ethereum manager token ($edec dec)" "$etok" "$(call "$em" 'token()(address)' "$ETH_RPC")"
-  ck "Ethereum manager mode = locking(0)" 0 "$(call "$em" 'getMode()(uint8)' "$ETH_RPC")"
-  local p; p=$(peer_of "$em" "$hyd_id" "$ETH_RPC")
-  ck "Ethereum manager peer → Hydration manager" "$(b32 "$hm"),$hdec" "$p"
-  ck "Ethereum transceiver peer → Hydration transceiver" "$(b32 "$ht")" \
-     "$(call "$et" 'getWormholePeer(uint16)(bytes32)' "$ETH_RPC" "$hyd_id")"
-  case "$(lower "$(call "$em" 'getTransceivers()(address[])' "$ETH_RPC")")" in
-    *"$(lower "${et#0x}")"*) ck "Ethereum manager registers its transceiver" x x ;;
-    *) ck "Ethereum manager registers its transceiver" "$et" "not in getTransceivers()" ;;
+  # hub side
+  ck "$hub manager token ($edec dec)" "$etok" "$(call "$em" 'token()(address)' "$hrpc")"
+  ck "$hub manager mode = locking(0)" 0 "$(call "$em" 'getMode()(uint8)' "$hrpc")"
+  local p; p=$(peer_of "$em" "$hyd_id" "$hrpc")
+  ck "$hub manager peer → Hydration manager" "$(b32 "$hm"),$hdec" "$p"
+  ck "$hub transceiver peer → Hydration transceiver" "$(b32 "$ht")" \
+     "$(call "$et" 'getWormholePeer(uint16)(bytes32)' "$hrpc" "$hyd_id")"
+  case "$(lower "$(call "$em" 'getTransceivers()(address[])' "$hrpc")")" in
+    *"$(lower "${et#0x}")"*) ck "$hub manager registers its transceiver" x x ;;
+    *) ck "$hub manager registers its transceiver" "$et" "not in getTransceivers()" ;;
   esac
 
   # Hydration side
   ck "Hydration manager token ($hdec dec)" "$htok" "$(call "$hm" 'token()(address)' "$HYDRATION_RPC")"
   ck "Hydration manager mode = burning(1)" 1 "$(call "$hm" 'getMode()(uint8)' "$HYDRATION_RPC")"
-  p=$(peer_of "$hm" "$eth_id" "$HYDRATION_RPC")
-  ck "Hydration manager peer → Ethereum manager" "$(b32 "$em"),$edec" "$p"
-  ck "Hydration transceiver peer → Ethereum transceiver" "$(b32 "$et")" \
-     "$(call "$ht" 'getWormholePeer(uint16)(bytes32)' "$HYDRATION_RPC" "$eth_id")"
+  p=$(peer_of "$hm" "$hub_id" "$HYDRATION_RPC")
+  ck "Hydration manager peer → $hub manager" "$(b32 "$em"),$edec" "$p"
+  ck "Hydration transceiver peer → $hub transceiver" "$(b32 "$et")" \
+     "$(call "$ht" 'getWormholePeer(uint16)(bytes32)' "$HYDRATION_RPC" "$hub_id")"
   case "$(lower "$(call "$hm" 'getTransceivers()(address[])' "$HYDRATION_RPC")")" in
     *"$(lower "${ht#0x}")"*) ck "Hydration manager registers its transceiver" x x ;;
     *) ck "Hydration manager registers its transceiver" "$ht" "not in getTransceivers()" ;;

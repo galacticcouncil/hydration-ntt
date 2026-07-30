@@ -6,6 +6,7 @@ HYD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NTT_SRC="${NTT_SRC:-$(cd "$HYD_ROOT/.." && pwd)}"
 
 ETH_RPC="${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}"
+BASE_RPC="${BASE_RPC_URL:-https://mainnet.base.org}"
 HYDRATION_RPC="${HYDRATION_RPC:-https://hydration-rpc.n.dwellir.com}"
 SOLANA_RPC="${SOLANA_RPC:-https://api.mainnet-beta.solana.com}"
 
@@ -50,6 +51,7 @@ write_overrides() {
 {
   "chains": {
     "Ethereum":  { "rpc": "$ETH_RPC" },
+    "Base":      { "rpc": "$BASE_RPC" },
     "Hydration": { "rpc": "$HYDRATION_RPC" },
     "Solana":    { "rpc": "$SOLANA_RPC" }
   }

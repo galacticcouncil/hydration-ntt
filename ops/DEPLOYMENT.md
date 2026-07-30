@@ -113,11 +113,11 @@ The scripts' `init` step does the bookkeeping:
 Operational order: deploy **all hub legs first** (Ethereum / Solana / Sui), then the Hydration legs in a second phase. Scripts under `ops/scripts/` are split per leg accordingly (`scripts/ethereum/dai.sh` now, `scripts/hydration/dai.sh` later); each mainnet tx sits behind a confirmation gate. The raw commands they wrap:
 
 ```sh
-# --- ETH deployment ---
+# --- WETH deployment (unwrap variant: Hydration→Ethereum delivers native ETH) ---
 ntt add-chain Ethereum  --latest --mode locking --token <WETH> \
-  --manager-variant wethUnwrap -p …/tokens/eth/deployment.json      # variant optional; decide first
-ntt add-chain Hydration --latest --mode burning --token <HYDRATION_ETH_TOKEN> \
-  --skip-verify -p …/tokens/eth/deployment.json
+  --manager-variant wethUnwrap -p …/tokens/weth/deployment.json      # variant optional; decide first
+ntt add-chain Hydration --latest --mode burning --token <HYDRATION_WETH_TOKEN> \
+  --skip-verify -p …/tokens/weth/deployment.json
 
 # --- DAI deployment ---
 ntt add-chain Ethereum  --latest --mode locking --token <DAI>  -p …/tokens/dai/deployment.json

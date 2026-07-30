@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# ETH — hub leg: Ethereum, locking mode, WETH UNWRAP VARIANT. Native ETH is
+# WETH — hub leg: Ethereum, locking mode, UNWRAP VARIANT. Native ETH is
 # not lockable, so the manager locks WETH; the wethUnwrap variant (baked at
 # deploy, immutable) unwraps on delivery: Hydration→Ethereum recipients get
 # NATIVE ETH. Deposits Ethereum→Hydration are still in WETH (wrap + approve —
 # frontends prepend the wrap tx; the manager never wraps).
 # Signs with ETHEREUM_PRIVATE_KEY only.
 #
-#   scripts/ethereum/eth.sh preflight   # no txs: keys, balances, gas price, CLI sanity
-#   scripts/ethereum/eth.sh init        # no txs: NTT_COMMIT, overrides.json, deployment.json
-#   scripts/ethereum/eth.sh deploy      # TX Ethereum: manager+transceiver (locking WETH,
+#   scripts/ethereum/weth.sh preflight   # no txs: keys, balances, gas price, CLI sanity
+#   scripts/ethereum/weth.sh init        # no txs: NTT_COMMIT, overrides.json, deployment.json
+#   scripts/ethereum/weth.sh deploy      # TX Ethereum: manager+transceiver (locking WETH,
 #                                      #   --manager-variant wethUnwrap), verifies on
 #                                      #   Etherscan inline (ETHEREUM_SCAN_API_KEY)
-#   scripts/ethereum/eth.sh push        # TX Ethereum: register Hydration peer + limits (after spoke leg)
+#   scripts/ethereum/weth.sh push        # TX Ethereum: register Hydration peer + limits (after spoke leg)
 #
-#   scripts/ethereum/eth.sh status      # local vs on-chain drift
+#   scripts/ethereum/weth.sh status      # local vs on-chain drift
 #
 # Post-hoc verify note: the manager impl contract is
 #   src/NttManager/NttManagerWethUnwrap.sol:NttManagerWethUnwrap  (not NttManager)
@@ -21,7 +21,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib.sh"
 
-DEPLOYMENT="$HYD_ROOT/tokens/eth/deployment.json"
+DEPLOYMENT="$HYD_ROOT/tokens/weth/deployment.json"
 WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2   # canonical WETH, 18 decimals
 
 cmd_preflight() {
@@ -49,7 +49,7 @@ cmd_deploy() {
 
 # Ethereum-side half of the cross-link: registers the Hydration manager +
 # transceiver as peers ON Ethereum and applies Ethereum limits. The
-# Hydration-side half runs from scripts/hydration/eth.sh push with its own key.
+# Hydration-side half runs from scripts/hydration/weth.sh push with its own key.
 cmd_push() {
   use_key ETHEREUM_PRIVATE_KEY
   cmd_status || true

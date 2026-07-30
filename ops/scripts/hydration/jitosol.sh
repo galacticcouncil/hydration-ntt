@@ -1,43 +1,41 @@
 #!/usr/bin/env bash
-# WETH — spoke leg: Hydration, burning mode. PRECOMPILE VARIANT (preferred):
+# jitoSOL — spoke leg: Hydration, burning mode. PRECOMPILE VARIANT (preferred):
 # the representation is a runtime asset (asset registry, governance) exposed
 # as ERC-20 at the currencies precompile 0x…0001<asset-id>, with NTT
 # mint/burn from hydration-node PR #1488. No token contract is deployed;
 # minter binding = currencies.set_ntt_minter extrinsic (governance).
 #
-# Run only AFTER the Ethereum hub leg (scripts/ethereum/weth.sh — locks WETH,
-# wethUnwrap variant: Hydration→Ethereum recipients get NATIVE ETH). The
-# unwrap lives entirely on the hub; this leg is a standard burning spoke.
+# Run only AFTER the Solana hub leg (scripts/solana/jitosol.sh).
 # Signs with HYDRATION_PRIVATE_KEY only (whitelisted Hydration deployer).
 #
-#   scripts/hydration/weth.sh preflight   # no txs: hub leg present, balance, whitelist note
-#   scripts/hydration/weth.sh asset <id>  # no txs: derive+verify precompile ref from asset id
-#   scripts/hydration/weth.sh deploy      # TX: manager+transceiver (burning), --skip-verify
-#                                       #   (verify post-hoc via scripts/hydration/_verify.sh)
-#   scripts/hydration/weth.sh limits      # no txs: write rate limits into deployment.json
-#   scripts/hydration/weth.sh push        # TX Hydration: register Ethereum peer + limits
+#   scripts/hydration/jitosol.sh preflight   # no txs: hub leg present, balance, whitelist note
+#   scripts/hydration/jitosol.sh asset <id>  # no txs: derive+verify precompile ref from asset id
+#   scripts/hydration/jitosol.sh deploy      # TX: manager+transceiver (burning), --skip-verify
+#                                           #   (verify post-hoc via scripts/hydration/_verify.sh)
+#   scripts/hydration/jitosol.sh limits      # no txs: write rate limits into deployment.json
+#   scripts/hydration/jitosol.sh push        # TX Hydration: register Solana peer + limits
 #
-#   scripts/hydration/weth.sh minter      # no txs: print set_ntt_minter governance call
-#   scripts/hydration/weth.sh status      # local vs on-chain drift
+#   scripts/hydration/jitosol.sh minter      # no txs: print set_ntt_minter governance call
+#   scripts/hydration/jitosol.sh status      # local vs on-chain drift
 #
-# Cross-link is two-sided: after 'push' here, also run scripts/ethereum/weth.sh
-# push (signs with the Ethereum key). Ownership transfer to the multisig is
+# Cross-link is two-sided: after 'push' here, also run scripts/solana/jitosol.sh
+# push (signs with the Solana payer). Ownership transfer to the multisig is
 # deliberately NOT here — DEPLOYMENT.md Step 7, only after smoke tests.
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib.sh"
 
-DEPLOYMENT="$HYD_ROOT/tokens/weth/deployment.json"
-TOKEN_ADDR_FILE="$HYD_ROOT/tokens/weth/hydration-token.addr"
+DEPLOYMENT="$HYD_ROOT/tokens/jitosol/deployment.json"
+TOKEN_ADDR_FILE="$HYD_ROOT/tokens/jitosol/hydration-token.addr"
 
-# 24h NTT rate limits, whole tokens. Ethereum side is 18-dec WETH; Hydration
+# 24h NTT rate limits, whole tokens. Solana side is 9-dec jitoSOL; Hydration
 # side uses the runtime asset's decimals (read live from the precompile).
-LIMIT_ETHEREUM_OUT="${LIMIT_ETHEREUM_OUT:-10000}"   # not a stable — check spot and size before 'limits'
-LIMIT_ETHEREUM_IN="${LIMIT_ETHEREUM_IN:-10000}"
+LIMIT_SOLANA_OUT="${LIMIT_SOLANA_OUT:-8000}"   # ≈ SOL leg's USD sizing (jitoSOL ≈ 1.2 SOL) — check spot before 'limits'
+LIMIT_SOLANA_IN="${LIMIT_SOLANA_IN:-8000}"
 LIMIT_HYDRATION_OUT="${LIMIT_HYDRATION_OUT:-184467440737}"   # ~uint64 max = unlimited (runtime fuse governs this side)
 LIMIT_HYDRATION_IN="${LIMIT_HYDRATION_IN:-184467440737}"    # ~uint64 max = unlimited
 
-hub_manager()   { jq -r '.chains.Ethereum.manager  // empty' "$DEPLOYMENT" 2>/dev/null; }
+hub_manager()   { jq -r '.chains.Solana.manager    // empty' "$DEPLOYMENT" 2>/dev/null; }
 spoke_manager() { jq -r '.chains.Hydration.manager // empty' "$DEPLOYMENT" 2>/dev/null; }
 
 cmd_preflight() {
@@ -45,8 +43,8 @@ cmd_preflight() {
   need_tools ntt cast jq git
   check_cli
   [ -n "$(hub_manager)" ] \
-    || { echo "ERROR: no Ethereum manager in $DEPLOYMENT — run scripts/ethereum/weth.sh first"; exit 1; }
-  echo "Ethereum hub manager: $(hub_manager)"
+    || { echo "ERROR: no Solana manager in $DEPLOYMENT — run scripts/solana/jitosol.sh first"; exit 1; }
+  echo "Solana hub manager: $(hub_manager)"
   local addr; addr=$(deployer)
   echo "== Deployer: $addr =="
   echo "Hydration balance: $(cast balance --ether "$addr" --rpc-url "$HYDRATION_RPC")"
@@ -56,7 +54,7 @@ cmd_preflight() {
 # Representation ref = currencies precompile: 16-byte prefix ending in 0x01,
 # then the u32 asset id big-endian (erc20_mapping.rs in hydration-node).
 cmd_asset() {
-  local id="${1:?usage: weth.sh asset <asset-id>}"
+  local id="${1:?usage: jitosol.sh asset <asset-id>}"
   need_tools cast jq
   [ ! -s "$TOKEN_ADDR_FILE" ] \
     || { echo "already set: $(cat "$TOKEN_ADDR_FILE") (delete $TOKEN_ADDR_FILE to redo)"; exit 0; }
@@ -68,7 +66,7 @@ cmd_asset() {
     || { echo "ERROR: precompile call failed — is asset $id registered?"; exit 1; }
   dec=$(cast call "$addr" 'decimals()(uint8)' --rpc-url "$HYDRATION_RPC")
   echo "symbol=$sym decimals=$dec"
-  confirm "Use this asset as the WETH representation?"
+  confirm "Use this asset as the jitoSOL representation?"
   echo "$addr" > "$TOKEN_ADDR_FILE"
   echo "saved to $TOKEN_ADDR_FILE"
 }
@@ -121,32 +119,32 @@ cmd_limits() {
   [ -s "$TOKEN_ADDR_FILE" ] || { echo "ERROR: run 'asset' first"; exit 1; }
   local dec
   dec=$(cast call "$(cat "$TOKEN_ADDR_FILE")" 'decimals()(uint8)' --rpc-url "$HYDRATION_RPC")
-  echo "Hydration asset decimals: $dec (Ethereum WETH: 18)"
-  local efrac hfrac
-  efrac=$(printf '%018d' 0)
+  echo "Hydration asset decimals: $dec (Solana jitoSOL: 9)"
+  local sfrac hfrac
+  sfrac=$(printf '%09d' 0)
   hfrac=$(printf "%0${dec}d" 0)
-  jq --arg eo "$LIMIT_ETHEREUM_OUT.$efrac"  --arg ei "$LIMIT_ETHEREUM_IN.$efrac" \
+  jq --arg so "$LIMIT_SOLANA_OUT.$sfrac"    --arg si "$LIMIT_SOLANA_IN.$sfrac" \
      --arg ho "$LIMIT_HYDRATION_OUT.$hfrac" --arg hi "$LIMIT_HYDRATION_IN.$hfrac" '
-    .chains.Ethereum.limits.outbound          = $eo |
-    .chains.Ethereum.limits.inbound.Hydration = $ei |
+    .chains.Solana.limits.outbound            = $so |
+    .chains.Solana.limits.inbound.Hydration   = $si |
     .chains.Hydration.limits.outbound         = $ho |
-    .chains.Hydration.limits.inbound.Ethereum = $hi
+    .chains.Hydration.limits.inbound.Solana   = $hi
   ' "$DEPLOYMENT" > "$DEPLOYMENT.tmp" && mv "$DEPLOYMENT.tmp" "$DEPLOYMENT"
   jq '.chains | map_values(.limits)' "$DEPLOYMENT"
 }
 
-# Hydration-side half of the cross-link; the Ethereum-side half runs via
-# scripts/ethereum/weth.sh push (its own key).
+# Hydration-side half of the cross-link; the Solana-side half runs via
+# scripts/solana/jitosol.sh push (the Solana payer).
 cmd_push() {
   use_key HYDRATION_PRIVATE_KEY
   cmd_status || true
   confirm "Push Hydration-side config (setPeer + limits, owner-only)?"
   (cd "$NTT_SRC" && ntt push --only-chain Hydration -p "$DEPLOYMENT")
   cmd_status
-  echo "Remember: run scripts/ethereum/weth.sh push for the Ethereum-side half."
+  echo "Remember: run scripts/solana/jitosol.sh push for the Solana-side half."
 }
 
 case "${1:-}" in
   preflight|asset|deploy|minter|limits|push|status) "cmd_$1" "${@:2}" ;;
-  *) sed -n '2,26p' "$0"; exit 1 ;;
+  *) sed -n '2,24p' "$0"; exit 1 ;;
 esac
