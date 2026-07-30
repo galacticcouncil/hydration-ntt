@@ -1,0 +1,9 @@
+{
+  "note": "DAI NTT go-live — whitelist.dispatch_whitelisted_call_with_preimage(batch_all[EVMAccounts.set_ntt_minter(18,manager), AssetRegistry.update(18, xcm_rate_limit=10k DAI/day)]). Chopsticks-verified (Root dispatch).",
+  "asset": 18,
+  "minter": "0xcfd576f88c90844aebf45378fd09931281d8b14d",
+  "xcmRateLimit": "10000000000000000000000 (10,000 DAI/day)",
+  "innerBatchAll": "0x0d02085d0712000000cfd576f88c90844aebf45378fd09931281d8b14d33011200000000000001000040b2bac9e0191e0200000000000000000000",
+  "innerHash": "0x9da73a6b014f307bdcb5515cbe738df1fbfb1524ef80c0602159a10cf3e46b50",
+  "whitelistedProposal": "0x27030d02085d0712000000cfd576f88c90844aebf45378fd09931281d8b14d33011200000000000001000040b2bac9e0191e0200000000000000000000"
+}
