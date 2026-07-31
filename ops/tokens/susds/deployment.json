@@ -5,14 +5,14 @@
       "version": "2.0.0",
       "mode": "locking",
       "paused": false,
-      "owner": "0x6d116C3E43Bc1bFd4EEBe5c7BF043a342Ea6bBB2",
+      "owner": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7",
       "manager": "0x5085A4863f89eC9553F70187EE73B5aAe0fd14b5",
       "token": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0x7C236d237BEbBE1b7902131B31b7b3270005a810",
-          "pauser": "0x6d116C3E43Bc1bFd4EEBe5c7BF043a342Ea6bBB2"
+          "pauser": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7"
         }
       },
       "limits": {
@@ -21,7 +21,7 @@
           "Hydration": "100000.000000000000000000"
         }
       },
-      "pauser": "0x6d116C3E43Bc1bFd4EEBe5c7BF043a342Ea6bBB2",
+      "pauser": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7",
       "managerVariant": "standard"
     },
     "Hydration": {
