@@ -9,6 +9,10 @@ ETH_RPC="${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}"
 BASE_RPC="${BASE_RPC_URL:-https://mainnet.base.org}"
 HYDRATION_RPC="${HYDRATION_RPC:-https://hydration-rpc.n.dwellir.com}"
 SOLANA_RPC="${SOLANA_RPC:-https://api.mainnet-beta.solana.com}"
+# JSON-RPC for read-side scripts (_peering.sh) ONLY — public Sui fullnodes
+# dropped JSON-RPC (gRPC/GraphQL only), so this must be a provider that still
+# serves it. The ntt CLI itself talks gRPC to the public fullnode.
+SUI_JSONRPC="${SUI_JSONRPC:-https://autumn-flashy-liquid.sui-mainnet.quiknode.pro/20a018256175b53a0b6739bcf039b6070d00b904/}"
 
 confirm() {
   read -r -p "$1 [yes/NO] " reply

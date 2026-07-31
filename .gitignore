@@ -50,3 +50,13 @@ evm/broadcast/
 evm/last-run.stdout
 ops/tokens/*/keys/
 TODO.md
+
+# throwaway sui client config created per-deploy by the ntt CLI — contains the
+# imported deployer key in PLAINTEXT (sui.keystore); never commit
+.sui/
+
+# Sui publish records are DEPLOYMENT output — archived under ops/tokens/sui/sui-publish/,
+# not committed in the source tree (the CLI still needs working copies on disk here
+# for resume/upgrade; restore from the ops archive if missing)
+sui/packages/*/Published.toml
+sui/packages/*/Move.lock
