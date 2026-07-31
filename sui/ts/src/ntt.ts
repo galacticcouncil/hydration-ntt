@@ -193,10 +193,12 @@ export class SuiNtt<N extends Network, C extends SuiChains>
     const state = await this.getNttState();
     const modeField = state.mode;
 
-    // Mode is an enum with a variant field: { variant: "Locking" } or { variant: "Burning" }
-    if (modeField.variant === "Locking") {
+    // Mode is a Move enum. gRPC json rendering: { "@variant": "Locking" };
+    // legacy JSON-RPC rendering: { variant: "Locking" }.
+    const variant = (modeField as any)?.["@variant"] ?? modeField?.variant;
+    if (variant === "Locking") {
       return "locking";
-    } else if (modeField.variant === "Burning") {
+    } else if (variant === "Burning") {
       return "burning";
     }
 

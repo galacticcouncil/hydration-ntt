@@ -118,8 +118,11 @@ export function getVersion<N extends Network, C extends Chain>(
     case "Solana":
       return (ntt as SolanaNtt<N, SolanaChains>).version;
     case "Sui":
-      // For Sui, return a default version since version property is not implemented yet
-      return "dev";
+      // The SDK can't read a version from Sui deployments (upstream returns
+      // "dev"). Report the deployed Move package version instead: v1.0.0
+      // (+ #814 package-management build changes; see ops/scripts/sui/README.md
+      // and NTT_COMMIT for the exact source).
+      return "1.0.0";
     default:
       throw new Error("Unsupported platform");
   }

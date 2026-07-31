@@ -97,9 +97,13 @@ export class SuiNativeSigner<N extends Network, C extends SuiChains = SuiChains>
           transactionBytes = await transaction.build({ client: this.client });
         }
         let result = await this._signer.signTransaction(transactionBytes);
+        // sdk-sui's sendWait passes this object verbatim as the options of
+        // the v2 gRPC executeTransaction: {transaction: Uint8Array,
+        // signatures: string[]} — the old {transactionBlock, signature}
+        // JSON-RPC shape crashes it
         signed.push({
-          transactionBlock: result.bytes,
-          signature: result.signature,
+          transaction: transactionBytes,
+          signatures: [result.signature],
         });
       } catch (error) {
         console.error(`ERROR: Failed to sign/execute transaction ${i + 1}:`);

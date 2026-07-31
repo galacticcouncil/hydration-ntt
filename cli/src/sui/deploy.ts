@@ -31,6 +31,46 @@ import {
   saveSetupProgress,
 } from "./helpers";
 
+// @mysten/sui v2 gRPC client (#899): signAndExecuteTransaction returns a
+// tagged union ({$kind: 'Transaction'|'FailedTransaction'}) and no longer
+// emits JSON-RPC-style objectChanges. Rebuild them from
+// effects.changedObjects + the objectTypes id→type map so
+// findCreatedObject() keeps working.
+async function signAndExecuteWithObjectChanges(
+  client: any,
+  signer: any,
+  transaction: any,
+  label: string
+): Promise<any[]> {
+  const result = await client.signAndExecuteTransaction({
+    signer,
+    transaction,
+    include: { effects: true, objectTypes: true },
+  });
+  const txn = result.Transaction ?? result.FailedTransaction;
+  const status = txn?.effects?.status ?? txn?.status;
+  if (result.$kind !== "Transaction" || (status && status.success === false)) {
+    throw new Error(
+      `${label} failed: ${JSON.stringify(status?.error ?? result.$kind)}`
+    );
+  }
+  const objectTypes: Record<string, string> = txn.objectTypes ?? {};
+  return (txn.effects?.changedObjects ?? [])
+    .filter((c: any) => c.idOperation === "Created")
+    .map((c: any) => {
+      const ownerKind: string = c.outputOwner?.$kind ?? "";
+      return {
+        type: "created",
+        objectId: c.objectId,
+        objectType: objectTypes[c.objectId],
+        owner:
+          ownerKind.includes("Shared") || ownerKind.includes("Consensus")
+            ? { Shared: c.outputOwner?.Shared ?? true }
+            : c.outputOwner,
+      };
+    });
+}
+
 export async function upgradeSui<N extends Network, C extends SuiChains>(
   pwd: string,
   version: string | null,
@@ -277,24 +317,18 @@ export async function deploySui<N extends Network, C extends Chain>(
       const client = suiSigner.client;
       const ownerAddress = signer.address.address.toString();
 
-      const nttDeployerCaps = await client.getOwnedObjects({
+      // v2 gRPC client: getOwnedObjects → listOwnedObjects({owner, type})
+      const nttDeployerCaps = await client.listOwnedObjects({
         owner: ownerAddress,
-        filter: {
-          StructType: `${nttPackageId}::setup::DeployerCap`,
-        },
-        options: { showType: true },
+        type: `${nttPackageId}::setup::DeployerCap`,
       });
-      const nttDeployerCapId = nttDeployerCaps.data?.[0]?.data?.objectId;
+      const nttDeployerCapId = nttDeployerCaps.objects?.[0]?.objectId;
 
-      const whDeployerCaps = await client.getOwnedObjects({
+      const whDeployerCaps = await client.listOwnedObjects({
         owner: ownerAddress,
-        filter: {
-          StructType: `${whTransceiverPackageId}::wormhole_transceiver::DeployerCap`,
-        },
-        options: { showType: true },
+        type: `${whTransceiverPackageId}::wormhole_transceiver::DeployerCap`,
       });
-      const whTransceiverDeployerCapId =
-        whDeployerCaps.data?.[0]?.data?.objectId;
+      const whTransceiverDeployerCapId = whDeployerCaps.objects?.[0]?.objectId;
 
       // Load setup progress from previous run (if any)
       const progress = readSetupProgress(progressPath);
@@ -389,34 +423,21 @@ export async function deploySui<N extends Network, C extends Chain>(
 
         tx.setGasBudget(finalGasBudget);
 
-        const setupResult = await client.signAndExecuteTransaction({
-          signer: suiSigner._signer,
-          transaction: tx,
-          options: { showEffects: true, showObjectChanges: true },
-        });
-
-        if (!setupResult.objectChanges) {
-          throw new Error("Failed to complete NTT setup");
-        }
-
-        console.log(
-          "Object changes:",
-          JSON.stringify(setupResult.objectChanges, null, 2)
+        const setupChanges = await signAndExecuteWithObjectChanges(
+          client,
+          suiSigner._signer,
+          tx,
+          "NTT setup"
         );
 
-        nttStateId = findCreatedObject(
-          setupResult.objectChanges,
-          "state::State",
-          true
-        );
+        console.log("Object changes:", JSON.stringify(setupChanges, null, 2));
+
+        nttStateId = findCreatedObject(setupChanges, "state::State", true);
         if (!nttStateId) {
           throw new Error("Could not find NTT State object ID");
         }
 
-        nttAdminCapId = findCreatedObject(
-          setupResult.objectChanges,
-          "state::AdminCap"
-        );
+        nttAdminCapId = findCreatedObject(setupChanges, "state::AdminCap");
 
         console.log(`NTT State created at: ${nttStateId}`);
         if (nttAdminCapId) {
@@ -465,20 +486,17 @@ export async function deploySui<N extends Network, C extends Chain>(
         // Wait for network to settle after NTT setup
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        const transceiverResult = await client.signAndExecuteTransaction({
-          signer: suiSigner._signer,
-          transaction: transceiverTx,
-          options: { showEffects: true, showObjectChanges: true },
-        });
+        const transceiverChanges = await signAndExecuteWithObjectChanges(
+          client,
+          suiSigner._signer,
+          transceiverTx,
+          "Wormhole Transceiver setup"
+        );
 
-        if (!transceiverResult.objectChanges) {
-          throw new Error("Failed to complete Wormhole Transceiver setup");
-        }
-
-        console.log(JSON.stringify(transceiverResult.objectChanges, null, 2));
+        console.log(JSON.stringify(transceiverChanges, null, 2));
 
         transceiverStateId = findCreatedObject(
-          transceiverResult.objectChanges,
+          transceiverChanges,
           "::wormhole_transceiver::State",
           true
         );
@@ -493,7 +511,7 @@ export async function deploySui<N extends Network, C extends Chain>(
         );
 
         whTransceiverAdminCapId = findCreatedObject(
-          transceiverResult.objectChanges,
+          transceiverChanges,
           "::wormhole_transceiver::AdminCap"
         );
 
@@ -546,7 +564,9 @@ export async function deploySui<N extends Network, C extends Chain>(
           ],
           arguments: [
             registerTx.object(nttStateId!),
-            registerTx.object(transceiverStateId),
+            // state_object_id param is a pure ID value, not an object ref —
+            // passing tx.object() here is CommandArgumentError TypeMismatch
+            registerTx.pure.id(transceiverStateId),
             registerTx.object(nttAdminCapId),
           ],
         });
@@ -556,19 +576,12 @@ export async function deploySui<N extends Network, C extends Chain>(
         try {
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          const registerResult = await client.signAndExecuteTransaction({
-            signer: suiSigner._signer,
-            transaction: registerTx,
-            options: { showEffects: true, showObjectChanges: true },
-          });
-
-          if (registerResult.effects?.status?.status !== "success") {
-            throw new Error(
-              `Registration failed: ${JSON.stringify(
-                registerResult.effects?.status
-              )}`
-            );
-          }
+          await signAndExecuteWithObjectChanges(
+            client,
+            suiSigner._signer,
+            registerTx,
+            "Transceiver registration"
+          );
 
           console.log(
             "Wormhole transceiver successfully registered with NTT manager"
