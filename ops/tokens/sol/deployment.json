@@ -5,7 +5,7 @@
       "version": "3.0.0",
       "mode": "locking",
       "paused": false,
-      "owner": "6db8TCH51fK4Pq2LkBdMaMFPfXD17GjfLD8TaMPWNuiq",
+      "owner": "EJADfinBBZ49yBMQcRmkCDm5f8Z9M64GpjP4KhfA4JM9",
       "manager": "DiGxk55uAQNVzzg2FucPgdrQ4azb5SDvWQvzpzJD3o7J",
       "token": "So11111111111111111111111111111111111111112",
       "transceivers": {
@@ -25,14 +25,14 @@
       "version": "2.0.0",
       "mode": "burning",
       "paused": false,
-      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "owner": "0xAA7e0000000000000000000000000000000AA7E1",
       "manager": "0x9e200C0f28D92D296b201D96C8269d3CAFFfA9FF",
       "token": "0x00000000000000000000000000000001000F4530",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0x2F04AcF249091425d51e67EeA3C3161ccE283202",
-          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+          "pauser": "0xAA7e0000000000000000000000000000000AA7E1"
         }
       },
       "limits": {
@@ -41,7 +41,7 @@
           "Solana": "184467440737.000000000"
         }
       },
-      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
       "managerVariant": "standard"
     }
   }

@@ -28,14 +28,14 @@
       "version": "2.0.0",
       "mode": "burning",
       "paused": false,
-      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "owner": "0xAA7e0000000000000000000000000000000AA7E1",
       "manager": "0x8dd1286A29dF5a2785FB638d6fB1598144Cfbc4C",
       "token": "0x000000000000000000000000000000010000002C",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0x2e84fac378D67Dc2e11026fB4919E80263a87375",
-          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+          "pauser": "0xAA7e0000000000000000000000000000000AA7E1"
         }
       },
       "limits": {
@@ -44,7 +44,7 @@
           "Base": "184467440737.000000"
         }
       },
-      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
       "managerVariant": "standard"
     }
   }

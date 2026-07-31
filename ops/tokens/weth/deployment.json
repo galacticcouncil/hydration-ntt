@@ -28,14 +28,14 @@
       "version": "2.0.0",
       "mode": "burning",
       "paused": false,
-      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "owner": "0xAA7e0000000000000000000000000000000AA7E1",
       "manager": "0xB5cEf790D52A57fa619eD96eDd64c5328F3DCFb7",
       "token": "0x0000000000000000000000000000000100000014",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0x8acce9CA511d5D7213F8C3f813B8916087cd00ae",
-          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+          "pauser": "0xAA7e0000000000000000000000000000000AA7E1"
         }
       },
       "limits": {
@@ -44,7 +44,7 @@
           "Ethereum": "184467440737.000000000000000000"
         }
       },
-      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
       "managerVariant": "standard"
     }
   }

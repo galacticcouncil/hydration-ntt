@@ -25,14 +25,14 @@
       "version": "2.0.0",
       "mode": "burning",
       "paused": false,
-      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "owner": "0xAA7e0000000000000000000000000000000AA7E1",
       "manager": "0xcE73C15B9ED02413066DE5B904A36F8e8f9B5331",
       "token": "0x0000000000000000000000000000000100000028",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0xF38D9C3bA6999Dc331b32B416083Fd7e02D17B04",
-          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+          "pauser": "0xAA7e0000000000000000000000000000000AA7E1"
         }
       },
       "limits": {
@@ -41,7 +41,7 @@
           "Solana": "184467440737.000000000"
         }
       },
-      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
       "managerVariant": "standard"
     }
   }
