@@ -15,9 +15,9 @@
         }
       },
       "limits": {
-        "outbound": "100000.000000",
+        "outbound": "449016.984704",
         "inbound": {
-          "Hydration": "100000.000000"
+          "Hydration": "449016.984704"
         }
       }
     },
