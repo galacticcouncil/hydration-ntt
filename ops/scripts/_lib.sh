@@ -13,6 +13,11 @@ SOLANA_RPC="${SOLANA_RPC:-https://api.mainnet-beta.solana.com}"
 # dropped JSON-RPC (gRPC/GraphQL only), so this must be a provider that still
 # serves it. The ntt CLI itself talks gRPC to the public fullnode.
 SUI_JSONRPC="${SUI_JSONRPC:-https://autumn-flashy-liquid.sui-mainnet.quiknode.pro/20a018256175b53a0b6739bcf039b6070d00b904/}"
+# Robinhood Chain: Arbitrum Orbit, EVM chainId 4663, native ETH gas.
+# Explorer robinhoodchain.blockscout.com sits behind Cloudflare — script
+# access needs a browser User-Agent; verification goes via sourcify.dev
+# (chain 4663 is supported there and Blockscout imports it).
+ROBINHOOD_RPC="${ROBINHOOD_RPC:-https://rpc.mainnet.chain.robinhood.com}"
 
 confirm() {
   read -r -p "$1 [yes/NO] " reply
@@ -50,6 +55,7 @@ check_cli() {
 }
 
 # CLI reads overrides.json from its cwd — pin RPCs in the NTT source root.
+# Sui entry is for the read-side ops scripts only (CLI talks gRPC itself).
 write_overrides() {
   cat > "$NTT_SRC/overrides.json" <<EOF
 {
@@ -57,7 +63,9 @@ write_overrides() {
     "Ethereum":  { "rpc": "$ETH_RPC" },
     "Base":      { "rpc": "$BASE_RPC" },
     "Hydration": { "rpc": "$HYDRATION_RPC" },
-    "Solana":    { "rpc": "$SOLANA_RPC" }
+    "Solana":    { "rpc": "$SOLANA_RPC" },
+    "Sui":       { "rpc": "$SUI_JSONRPC" },
+    "Robinhood": { "rpc": "$ROBINHOOD_RPC" }
   }
 }
 EOF
