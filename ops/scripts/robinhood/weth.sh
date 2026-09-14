@@ -37,13 +37,12 @@ RH_WETH=0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73   # canonical (aeWETH-style p
 CHAIN_HYDRATION=73
 CHAIN_ROBINHOOD=72
 
-# 24h NTT rate limits, whole WETH (18 dec) — mirrors the Ethereum hub leg
-# (10000). NB: RH outbound + Hydration inbound(72) are also the dual-hub
-# custody-drift throttles; at 10k/day drift can move fast — watch custody
-# shares once live.
-LIMIT_RH_OUT="${LIMIT_RH_OUT:-10000}"
-LIMIT_RH_IN="${LIMIT_RH_IN:-10000}"
-LIMIT_HYD_IN="${LIMIT_HYD_IN:-10000}"   # only used by govref (setPeer param)
+# 24h NTT rate limits, whole WETH (18 dec). 69/day on the Robinhood leg
+# (sized 2026-09-14) — also the dual-hub custody-drift throttle. The
+# Ethereum hub leg stays at its own 10k limits.
+LIMIT_RH_OUT="${LIMIT_RH_OUT:-69}"
+LIMIT_RH_IN="${LIMIT_RH_IN:-69}"
+LIMIT_HYD_IN="${LIMIT_HYD_IN:-69}"   # only used by govref (setPeer param)
 
 hyd_manager() { jq -r '.chains.Hydration.manager' "$DEPLOYMENT"; }
 hyd_xcvr()    { jq -r '.chains.Hydration.transceivers.wormhole.address' "$DEPLOYMENT"; }
@@ -93,7 +92,7 @@ cmd_peer() {
   confirm "Send the 3 Robinhood-side wiring txs?"
   cast send "$M" 'setPeer(uint16,bytes32,uint8,uint256)' $CHAIN_HYDRATION "$(b32 "$(hyd_manager)")" 18 "$(raw18 "$LIMIT_RH_IN")" \
     --private-key "$ETH_PRIVATE_KEY" --rpc-url "$ROBINHOOD_RPC"
-  if [ "$(cast call "$X" 'getWormholePeer(uint16)(bytes32)' $CHAIN_HYDRATION --rpc-url "$ROBINHOOD_RPC")" = "$(b32 "$(hyd_xcvr)")" ]; then
+  if [ "$(cast call "$X" 'getWormholePeer(uint16)(bytes32)' $CHAIN_HYDRATION --rpc-url "$ROBINHOOD_RPC" | tr 'A-F' 'a-f')" = "$(b32 "$(hyd_xcvr)" | tr 'A-F' 'a-f')" ]; then
     echo "wormhole peer already set, skipping (set-once)"
   else
     cast send "$X" 'setWormholePeer(uint16,bytes32)' $CHAIN_HYDRATION "$(b32 "$(hyd_xcvr)")" \
