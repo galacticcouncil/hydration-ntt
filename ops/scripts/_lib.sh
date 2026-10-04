@@ -18,6 +18,10 @@ SUI_JSONRPC="${SUI_JSONRPC:-https://autumn-flashy-liquid.sui-mainnet.quiknode.pr
 # access needs a browser User-Agent; verification goes via sourcify.dev
 # (chain 4663 is supported there and Blockscout imports it).
 ROBINHOOD_RPC="${ROBINHOOD_RPC:-https://rpc.mainnet.chain.robinhood.com}"
+# HyperEVM: EVM chainId 999, native HYPE gas. Large contract deploys need
+# big blocks (per-address HyperCore flag: `ntt hype set-big-blocks`).
+# Verification via sourcify.dev (chain 999 supported).
+HYPEREVM_RPC="${HYPEREVM_RPC:-https://rpc.hyperliquid.xyz/evm}"
 
 confirm() {
   read -r -p "$1 [yes/NO] " reply
@@ -65,7 +69,8 @@ write_overrides() {
     "Hydration": { "rpc": "$HYDRATION_RPC" },
     "Solana":    { "rpc": "$SOLANA_RPC" },
     "Sui":       { "rpc": "$SUI_JSONRPC" },
-    "Robinhood": { "rpc": "$ROBINHOOD_RPC" }
+    "Robinhood": { "rpc": "$ROBINHOOD_RPC" },
+    "HyperEVM":  { "rpc": "$HYPEREVM_RPC" }
   }
 }
 EOF

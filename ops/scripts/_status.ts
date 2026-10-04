@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 // @ts-nocheck — standalone bun script, not part of the SDK build; the repo
 // tsconfig has no node/bun types for ops/.
-// Custody status: per token, hub custody vs Hydration representation supply.
+// Custody status: per token, total custody across every `locking` leg vs total
+// circulating supply across every `burning` leg. Legs pair by mode, never by
+// chain name — a token may have several hubs (weth locks on Ethereum *and*
+// Robinhood) and the hub may itself be Hydration (hdx, hollar, where Robinhood
+// is the spoke).
 // Read-only, zero deps. RPCs from overrides.json; Sui via SUI_RPC or the
 // public fullnode. Custody locations per ops/CUSTODY.md:
 //   EVM    — manager's own token balance
 //   Solana — config.custody token account (config PDA parsed on the fly)
 //   Sui    — State.balance field of the manager object
-// Usage: bun ops/scripts/custody-status.ts
+// Usage: ./ops/scripts/_status.ts
 
 import { readdirSync, readFileSync } from "fs";
 import { createHash } from "crypto";
@@ -23,11 +27,13 @@ const RPC: Record<string, string> = Object.fromEntries(
 const SUI_RPCS = [process.env.SUI_RPC, RPC.Sui, "https://sui-rpc.publicnode.com"].filter(Boolean) as string[];
 
 let rpcId = 0;
+const RPC_TIMEOUT_MS = 20_000;
 async function rpc(url: string, method: string, params: unknown[]): Promise<any> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`);
   const j: any = await res.json();
@@ -60,8 +66,12 @@ async function evmCustody(chain: string, leg: any) {
 // still counted by totalSupply(). Circulating = issuance - dEaD balance.
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
-async function hydrationSupply(leg: any) {
-  const url = RPC.Hydration;
+async function evmSupply(chain: string, leg: any) {
+  if (chain === "Solana" || chain === "Sui") {
+    throw new Error(`burning leg on ${chain} not supported by this script`);
+  }
+  const url = RPC[chain];
+  if (!url) throw new Error(`no RPC for ${chain} in overrides.json`);
   const [supply, dec, dead] = await Promise.all([
     ethCall(url, leg.token, SEL.totalSupply),
     ethCall(url, leg.token, SEL.decimals),
@@ -205,11 +215,48 @@ function delta(a: { raw: bigint; decimals: number }, b: { raw: bigint; decimals:
   return { raw: scale(a) - scale(b), decimals: dec };
 }
 
+// Sum legs that may be denominated in different decimals, in a common scale.
+function sumScaled(parts: { raw: bigint; decimals: number }[]) {
+  const decimals = Math.max(...parts.map((p) => p.decimals));
+  const raw = parts.reduce((a, p) => a + p.raw * 10n ** BigInt(decimals - p.decimals), 0n);
+  return { raw, decimals };
+}
+
+function custodyOf(chain: string, leg: any) {
+  if (chain === "Solana") return solanaCustody(leg);
+  if (chain === "Sui") return suiCustody(leg);
+  return evmCustody(chain, leg);
+}
+
+// Never throws: a failed leg becomes { err } so one dead RPC can't sink the run.
+async function settle(chain: string, run: () => Promise<any>) {
+  try {
+    return { chain, ...(await run()) };
+  } catch (e: any) {
+    return { chain, err: e.message };
+  }
+}
+
 // ---------- main ----------
 
 const tokensDir = join(ROOT, "ops", "tokens");
 const tokens = readdirSync(tokensDir).sort();
-const rows: string[][] = [["token", "hub", "custody (hub)", "supply (Hydration)", "Δ custody-supply", "notes"]];
+const rows: string[][] = [
+  ["token", "hubs (locking)", "custody", "spokes (burning)", "supply", "Δ custody-supply", "notes"],
+];
+const NUMERIC = new Set([2, 4, 5]);
+const COLS = rows[0].length;
+// A side with several legs (weth locks on Ethereum *and* Robinhood) prints its
+// total on the token row, then one indented row per leg, so it's visible how
+// much sits on each chain. Single-leg sides stay on one line as before.
+const sideLabel = (names: string[]) => (names.length > 1 ? `${names.length} legs` : names[0]);
+// col is the chain column; col + 1 is its amount. Hubs are 1/2, spokes 3/4.
+function legRow(col: number, p: any): string[] {
+  const r: string[] = Array(COLS).fill("");
+  r[col] = "  " + p.chain;
+  r[col + 1] = p.err ? "ERR" : fmt(p.raw, p.decimals);
+  return r;
+}
 const custodyAddrs: string[] = [];
 let alarm = false;
 
@@ -218,40 +265,56 @@ for (const t of tokens) {
   try {
     dep = JSON.parse(readFileSync(join(tokensDir, t, "deployment.json"), "utf8"));
   } catch { continue; }
-  const hubName = Object.keys(dep.chains).find((c) => dep.chains[c].mode === "locking");
-  const hub = hubName ? dep.chains[hubName] : undefined;
-  const hyd = dep.chains.Hydration;
-  if (!hubName || !hub || !hyd) { rows.push([t, hubName ?? "?", "-", "-", "-", "missing leg"]); continue; }
 
-  const [cust, supply] = await Promise.all([
-    (hubName === "Solana" ? solanaCustody(hub)
-      : hubName === "Sui" ? suiCustody(hub)
-      : evmCustody(hubName, hub)
-    ).catch((e: Error) => ({ err: e.message })),
-    hydrationSupply(hyd).catch((e: Error) => ({ err: e.message })),
-  ] as any[]);
+  const chains = Object.keys(dep.chains);
+  const hubs = chains.filter((c) => dep.chains[c].mode === "locking");
+  const spokes = chains.filter((c) => dep.chains[c].mode === "burning");
+  // Progress on stderr: the table only prints once every leg has resolved.
+  process.stderr.write(`  … ${t} (${hubs.join("+") || "?"} → ${spokes.join("+") || "?"})\n`);
+  if (!hubs.length || !spokes.length) {
+    rows.push([t, hubs.join(", ") || "-", "-", spokes.join(", ") || "-", "-", "-", "missing leg"]);
+    continue;
+  }
 
-  if (cust.custody) custodyAddrs.push(`  ${t}: ${cust.custody}`);
+  const [custParts, supParts] = await Promise.all([
+    Promise.all(hubs.map((c) => settle(c, () => custodyOf(c, dep.chains[c])))),
+    Promise.all(spokes.map((c) => settle(c, () => evmSupply(c, dep.chains[c])))),
+  ]);
 
   const notes: string[] = [];
-  if (cust.note) notes.push(cust.note);
-  if (supply.note) notes.push(supply.note);
-  let custS = "ERR", supS = "ERR", dS = "-";
-  if (cust.err) notes.push(`hub: ${cust.err}`);
-  else custS = fmt(cust.raw, cust.decimals);
-  if (supply.err) notes.push(`hyd: ${supply.err}`);
-  else supS = fmt(supply.raw, supply.decimals);
-  if (!cust.err && !supply.err) {
-    const d = delta(cust, supply);
+  for (const p of [...custParts, ...supParts]) {
+    if (p.custody) custodyAddrs.push(`  ${t} (${p.chain}): ${p.custody}`);
+    if (p.note) notes.push(`${p.chain}: ${p.note}`);
+    if (p.err) notes.push(`${p.chain}: ${p.err}`);
+  }
+
+  // A partial sum reads as a deficit, so only compare when every leg resolved.
+  const cust = custParts.every((p) => !p.err) ? sumScaled(custParts as any) : null;
+  const sup = supParts.every((p) => !p.err) ? sumScaled(supParts as any) : null;
+
+  let dS = "-";
+  if (cust && sup) {
+    const d = delta(cust, sup);
     dS = (d.raw > 0n ? "+" : "") + fmt(d.raw, d.decimals);
     if (d.raw < 0n) { notes.push("!! supply exceeds custody"); alarm = true; }
   }
-  rows.push([t, hubName, custS, supS, dS, notes.join("; ")]);
+
+  rows.push([
+    t,
+    sideLabel(hubs),
+    cust ? fmt(cust.raw, cust.decimals) : "ERR",
+    sideLabel(spokes),
+    sup ? fmt(sup.raw, sup.decimals) : "ERR",
+    dS,
+    notes.join("; "),
+  ]);
+  if (custParts.length > 1) for (const p of custParts) rows.push(legRow(1, p));
+  if (supParts.length > 1) for (const p of supParts) rows.push(legRow(3, p));
 }
 
 const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => r[i].length)));
 const line = (r: string[]) =>
-  r.map((c, i) => (i >= 2 && i <= 4 ? c.padStart(widths[i]) : c.padEnd(widths[i]))).join("  ").trimEnd();
+  r.map((c, i) => (NUMERIC.has(i) ? c.padStart(widths[i]) : c.padEnd(widths[i]))).join("  ").trimEnd();
 console.log(line(rows[0]));
 console.log(widths.map((w) => "-".repeat(w)).join("  "));
 for (const r of rows.slice(1)) console.log(line(r));
