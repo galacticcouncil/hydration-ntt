@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "chainId": "999",
+  "createdAt": 1790985600,
+  "meta": {
+    "name": "Update signers on HyperEVM",
+    "description": "Update signers on HyperEVM",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7"
+  },
+  "transactions": [
+    {
+      "to": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7",
+      "value": "0",
+      "data": "0xe318b52b0000000000000000000000002b6f2d5bc8eefcc82fef4546fe7ff2143a23849700000000000000000000000047ca15263f30ae45e054377124f1c8ce0f50ea5c00000000000000000000000016b25bbabd8aa87c29989820e721aae739075ac4",
+      "contractMethod": {
+        "inputs": [
+          { "internalType": "address", "name": "prevOwner", "type": "address" },
+          { "internalType": "address", "name": "oldOwner", "type": "address" },
+          { "internalType": "address", "name": "newOwner", "type": "address" }
+        ],
+        "name": "swapOwner",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "prevOwner": "0x2b6F2D5bC8EEfCC82Fef4546Fe7ff2143A238497",
+        "oldOwner": "0x47ca15263f30aE45E054377124F1C8CE0f50ea5C",
+        "newOwner": "0x16b25bbAbd8aA87c29989820E721AaE739075AC4"
+      }
+    },
+    {
+      "to": "0xD557AeAf1e0cB3D226BfF3B7a10C2cdA9dA081E7",
+      "value": "0",
+      "data": "0x0d582f13000000000000000000000000990df21c11f82127b371102f44970e2fc6c5520a0000000000000000000000000000000000000000000000000000000000000004",
+      "contractMethod": {
+        "inputs": [
+          { "internalType": "address", "name": "owner", "type": "address" },
+          { "internalType": "uint256", "name": "_threshold", "type": "uint256" }
+        ],
+        "name": "addOwnerWithThreshold",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "owner": "0x990Df21C11f82127b371102F44970E2fc6c5520A",
+        "_threshold": "4"
+      }
+    }
+  ]
+}
