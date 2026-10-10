@@ -1,0 +1,57 @@
+{
+  "network": "Mainnet",
+  "chains": {
+    "Hydration": {
+      "version": "2.0.0",
+      "mode": "burning",
+      "paused": false,
+      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "manager": "0x374E5239a2342Be6Bf31B410EC03984D03A8b7dE",
+      "token": "0x00000000000000000000000000000001000f478E",
+      "transceivers": {
+        "threshold": 1,
+        "wormhole": {
+          "address": "0xc74BcE0b4bC1b06D6e31d8EfAf55e7e148f281d1",
+          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+        }
+      },
+      "limits": {
+        "outbound": "1000.000000000000000000000000",
+        "inbound": {}
+      },
+      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "managerVariant": "standard"
+    }
+  },
+  "external": {
+    "Near": {
+      "chainId": 15,
+      "mode": "locking",
+      "paused": false,
+      "owner": "hydration-whm.near",
+      "pendingOwner": null,
+      "manager": "ntt-near.hydration-whm.near",
+      "token": "wrap.near",
+      "transceivers": {
+        "threshold": 1,
+        "wormhole": {
+          "address": "ntt-near.hydration-whm.near"
+        }
+      },
+      "limits": {
+        "outbound": "1000.000000000000000000000000",
+        "inbound": {
+          "Hydration": "1000.000000000000000000000000"
+        }
+      },
+      "universalAddress": "0xd473056b88c2062503ea1425bdea8e87609e3d499b3b4d1809e440df2d7cb9e3",
+      "peers": {
+        "Hydration": {
+          "manager": "0x000000000000000000000000374e5239a2342be6bf31b410ec03984d03a8b7de",
+          "transceiver": "0x000000000000000000000000c74bce0b4bc1b06d6e31d8efaf55e7e148f281d1",
+          "decimals": 24
+        }
+      }
+    }
+  }
+}
