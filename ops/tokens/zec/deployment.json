@@ -5,21 +5,21 @@
       "version": "2.0.0",
       "mode": "burning",
       "paused": false,
-      "owner": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "owner": "0xAA7e0000000000000000000000000000000AA7E1",
       "manager": "0xe20cED5f5798cD4FeBc7aE182309b9f51345e0cC",
       "token": "0x00000000000000000000000000000001000f478D",
       "transceivers": {
         "threshold": 1,
         "wormhole": {
           "address": "0x0dd43A80C6F96019B8f5699Df1890DFa33BdDE85",
-          "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0"
+          "pauser": "0xAA7e0000000000000000000000000000000AA7E1"
         }
       },
       "limits": {
         "outbound": "10.00000000",
         "inbound": {}
       },
-      "pauser": "0x71FeB8b2849101a6E62e3369eaAfDc6154CD0Bc0",
+      "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
       "managerVariant": "standard"
     }
   },
@@ -28,7 +28,7 @@
       "chainId": 15,
       "mode": "locking",
       "paused": false,
-      "owner": "hydration-whm.near",
+      "owner": "hydration.sputnik-dao.near",
       "pendingOwner": null,
       "manager": "ntt-zec.hydration-whm.near",
       "token": "zec.omft.near",
