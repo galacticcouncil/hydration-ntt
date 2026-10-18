@@ -11,6 +11,9 @@
 //   EVM    — manager's own token balance
 //   Solana — config.custody token account (config PDA parsed on the fly)
 //   Sui    — State.balance field of the manager object
+//   NEAR   — NTT contract's NEP-141 balance (`external.Near`; NEAR_RPC or FastNEAR)
+// Supply on a burning leg: EVM totalSupply (minus @dEaD), Solana mint supply,
+// Sui coin total supply, NEAR ft_total_supply.
 // Usage: ./ops/scripts/_status.ts
 
 import { readdirSync, readFileSync } from "fs";
@@ -25,6 +28,7 @@ const RPC: Record<string, string> = Object.fromEntries(
 // Sui: official fullnode has dropped JSON-RPC — needs a provider that still
 // serves it. Order: SUI_RPC env, overrides.json, publicnode.
 const SUI_RPCS = [process.env.SUI_RPC, RPC.Sui, "https://sui-rpc.publicnode.com"].filter(Boolean) as string[];
+const NEAR_RPC = process.env.NEAR_RPC || RPC.Near || "https://free.rpc.fastnear.com";
 
 let rpcId = 0;
 const RPC_TIMEOUT_MS = 20_000;
@@ -67,9 +71,6 @@ async function evmCustody(chain: string, leg: any) {
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
 async function evmSupply(chain: string, leg: any) {
-  if (chain === "Solana" || chain === "Sui") {
-    throw new Error(`burning leg on ${chain} not supported by this script`);
-  }
   const url = RPC[chain];
   if (!url) throw new Error(`no RPC for ${chain} in overrides.json`);
   const [supply, dec, dead] = await Promise.all([
@@ -198,6 +199,60 @@ async function suiCustody(leg: any) {
   throw new Error(`sui rpc unreachable: ${lastErr}`);
 }
 
+async function suiSupply(leg: any) {
+  let lastErr = "";
+  for (const url of SUI_RPCS) {
+    try {
+      const [sup, meta] = await Promise.all([
+        rpc(url, "suix_getTotalSupply", [leg.token]),
+        rpc(url, "suix_getCoinMetadata", [leg.token]),
+      ]);
+      return { raw: BigInt(sup.value), decimals: meta?.decimals ?? 9, note: "" };
+    } catch (e: any) {
+      lastErr = `${url}: ${e.message}`;
+    }
+  }
+  throw new Error(`sui rpc unreachable: ${lastErr}`);
+}
+
+async function solanaSupply(leg: any) {
+  const s = await rpc(RPC.Solana, "getTokenSupply", [leg.token]);
+  return { raw: BigInt(s.value.amount), decimals: s.value.decimals, note: "" };
+}
+
+// ---------- NEAR ----------
+// whm native NEAR NTT, kept under deployment.json `external.Near` (the CLI has
+// no NEAR platform). One contract is manager + transceiver; custody is the
+// contract's own balance on the NEP-141 token.
+
+async function nearView(contract: string, method: string, args: object = {}): Promise<any> {
+  const r = await rpc(NEAR_RPC, "query", {
+    request_type: "call_function",
+    finality: "final",
+    account_id: contract,
+    method_name: method,
+    args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
+  } as any);
+  return JSON.parse(Buffer.from(r.result).toString());
+}
+
+async function nearCustody(leg: any) {
+  const [bal, meta, paused] = await Promise.all([
+    nearView(leg.token, "ft_balance_of", { account_id: leg.manager }),
+    nearView(leg.token, "ft_metadata"),
+    nearView(leg.manager, "is_paused"),
+  ]);
+  return { raw: BigInt(bal), decimals: meta.decimals, note: paused ? "PAUSED" : "" };
+}
+
+async function nearSupply(leg: any) {
+  const [sup, meta] = await Promise.all([
+    nearView(leg.token, "ft_total_supply"),
+    nearView(leg.token, "ft_metadata"),
+  ]);
+  return { raw: BigInt(sup), decimals: meta.decimals, note: "" };
+}
+
 // ---------- formatting ----------
 
 function fmt(raw: bigint, decimals: number): string {
@@ -225,7 +280,15 @@ function sumScaled(parts: { raw: bigint; decimals: number }[]) {
 function custodyOf(chain: string, leg: any) {
   if (chain === "Solana") return solanaCustody(leg);
   if (chain === "Sui") return suiCustody(leg);
+  if (chain === "Near") return nearCustody(leg);
   return evmCustody(chain, leg);
+}
+
+function supplyOf(chain: string, leg: any) {
+  if (chain === "Solana") return solanaSupply(leg);
+  if (chain === "Sui") return suiSupply(leg);
+  if (chain === "Near") return nearSupply(leg);
+  return evmSupply(chain, leg);
 }
 
 // Never throws: a failed leg becomes { err } so one dead RPC can't sink the run.
@@ -266,9 +329,11 @@ for (const t of tokens) {
     dep = JSON.parse(readFileSync(join(tokensDir, t, "deployment.json"), "utf8"));
   } catch { continue; }
 
-  const chains = Object.keys(dep.chains);
-  const hubs = chains.filter((c) => dep.chains[c].mode === "locking");
-  const spokes = chains.filter((c) => dep.chains[c].mode === "burning");
+  // Legs the CLI doesn't manage (NEAR) live under `external`; same shape.
+  const legs = { ...dep.chains, ...(dep.external ?? {}) };
+  const chains = Object.keys(legs);
+  const hubs = chains.filter((c) => legs[c].mode === "locking");
+  const spokes = chains.filter((c) => legs[c].mode === "burning");
   // Progress on stderr: the table only prints once every leg has resolved.
   process.stderr.write(`  … ${t} (${hubs.join("+") || "?"} → ${spokes.join("+") || "?"})\n`);
   if (!hubs.length || !spokes.length) {
@@ -277,8 +342,8 @@ for (const t of tokens) {
   }
 
   const [custParts, supParts] = await Promise.all([
-    Promise.all(hubs.map((c) => settle(c, () => custodyOf(c, dep.chains[c])))),
-    Promise.all(spokes.map((c) => settle(c, () => evmSupply(c, dep.chains[c])))),
+    Promise.all(hubs.map((c) => settle(c, () => custodyOf(c, legs[c])))),
+    Promise.all(spokes.map((c) => settle(c, () => supplyOf(c, legs[c])))),
   ]);
 
   const notes: string[] = [];
