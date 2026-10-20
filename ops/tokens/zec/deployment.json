@@ -16,7 +16,7 @@
         }
       },
       "limits": {
-        "outbound": "10.00000000",
+        "outbound": "100.00000000",
         "inbound": {}
       },
       "pauser": "0xAA7e0000000000000000000000000000000AA7E1",
@@ -39,9 +39,9 @@
         }
       },
       "limits": {
-        "outbound": "10.00000000",
+        "outbound": "100.00000000",
         "inbound": {
-          "Hydration": "10.00000000"
+          "Hydration": "100.00000000"
         }
       },
       "universalAddress": "0xca4092420316d55cfbb9a479ca23fdf0f5a0864a80c755b46e071c834fbf3976",

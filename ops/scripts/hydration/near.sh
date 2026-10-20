@@ -24,7 +24,7 @@
 #   scripts/hydration/near.sh asset [id]            # no txs: derive+verify precompile ref (default 1001358)
 #   scripts/hydration/near.sh deploy                # TX: manager+transceiver (burning), --skip-verify
 #                                                  #   (verify post-hoc: scripts/hydration/_verify_sourcify.sh near)
-#   scripts/hydration/near.sh limits                # TX Hydration: setOutboundLimit(LIMIT_OUT) — canary, == NEAR_INBOUND_LIMIT
+#   scripts/hydration/near.sh limits                # TX Hydration: setOutboundLimit(LIMIT_OUT) — == NEAR_INBOUND_LIMIT
 #   scripts/hydration/near.sh print-env             # no txs: HYDRATION_* lines for the NEAR migration env
 #   scripts/hydration/near.sh peer <ntt-account>    # TX Hydration: setPeer(15) + setWormholePeer(15) — wormhole peer SET-ONCE
 #
@@ -33,7 +33,7 @@
 #   scripts/hydration/near.sh status [ntt-account]  # read-only: peers + capacities (+ expected emitter)
 #
 # Env overrides: NEAR_DECIMALS (NEAR-side token decimals, default 24 for
-# wrap.near), NEAR_RPC, LIMIT_OUT / LIMIT_IN (canary, must match whm).
+# wrap.near), NEAR_RPC, LIMIT_OUT / LIMIT_IN (must match whm).
 # Ownership handover (scripts/hydration/_handover.sh near) only after smoke tests.
 
 set -euo pipefail
@@ -50,13 +50,14 @@ NEAR_TOKEN=wrap.near
 NEAR_RPC="${NEAR_RPC:-https://free.rpc.fastnear.com}"
 CHAIN_NEAR=15
 
-# 24h NTT rate limits, whole NEAR — canary, MUST MATCH the NEAR side
-# (whm near-ntt-near.env), raised together later:
+# 24h NTT rate limits, whole NEAR — MUST MATCH the NEAR side (whm
+# near-ntt-near.env). Canary until 2026-10-20, then raised to the >= $100k/day floor
+# (TC motion on Hydration + DAO proposal on NEAR, together):
 #   LIMIT_OUT (Hydration outbound)       == NEAR_INBOUND_LIMIT
 #   LIMIT_IN  (Hydration inbound from 15) == NEAR_OUTBOUND_LIMIT
 # The registry xcm_rate_limit mint fuse must be >= LIMIT_IN.
-LIMIT_OUT="${LIMIT_OUT:-1000}"
-LIMIT_IN="${LIMIT_IN:-1000}"
+LIMIT_OUT="${LIMIT_OUT:-25000}"
+LIMIT_IN="${LIMIT_IN:-25000}"
 
 spoke_manager() { jq -r '.chains.Hydration.manager // empty' "$DEPLOYMENT" 2>/dev/null || true; }
 spoke_xcvr()    { jq -r '.chains.Hydration.transceivers.wormhole.address // empty' "$DEPLOYMENT" 2>/dev/null || true; }
