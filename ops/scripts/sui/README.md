@@ -85,12 +85,13 @@ What they fix (symptom → cause):
 
 ## 4. RPC landscape
 
-Public Sui fullnodes dropped JSON-RPC entirely (gRPC/GraphQL only):
+Sui JSON-RPC is deprecated on every public provider (official fullnode,
+publicnode; gRPC/GraphQL only):
 
 - the ntt CLI talks **gRPC** to the public fullnode — leave `overrides.json`
   without a Sui entry; a JSON-RPC-only provider there breaks it;
-- read-side bash tooling (`scripts/_peering.sh`) needs **JSON-RPC** →
-  `SUI_JSONRPC` (default in `_lib.sh` = QuickNode endpoint).
+- read-side tooling (`scripts/_peering.sh`, `scripts/_status.ts`) uses
+  **GraphQL** → `SUI_GRAPHQL` (default = `https://graphql.mainnet.sui.io/graphql`).
 
 ## 5. Ownership
 

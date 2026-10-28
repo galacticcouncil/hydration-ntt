@@ -6,8 +6,8 @@
 // chain name — a token may have several hubs (weth locks on Ethereum *and*
 // Robinhood) and the hub may itself be Hydration (hdx, hollar, where Robinhood
 // is the spoke).
-// Read-only, zero deps. RPCs from overrides.json; Sui via SUI_RPC or the
-// public fullnode. Custody locations per ops/CUSTODY.md:
+// Read-only, zero deps. RPCs from overrides.json; Sui via SUI_GRAPHQL or the
+// public GraphQL endpoint. Custody locations per ops/CUSTODY.md:
 //   EVM    — manager's own token balance
 //   Solana — config.custody token account (config PDA parsed on the fly)
 //   Sui    — State.balance field of the manager object
@@ -25,9 +25,9 @@ const overrides = JSON.parse(readFileSync(join(ROOT, "overrides.json"), "utf8"))
 const RPC: Record<string, string> = Object.fromEntries(
   Object.entries(overrides.chains).map(([c, v]: [string, any]) => [c, v.rpc])
 );
-// Sui: official fullnode has dropped JSON-RPC — needs a provider that still
-// serves it. Order: SUI_RPC env, overrides.json, publicnode.
-const SUI_RPCS = [process.env.SUI_RPC, RPC.Sui, "https://sui-rpc.publicnode.com"].filter(Boolean) as string[];
+// Sui: JSON-RPC is deprecated on every public provider (and the QuickNode URL
+// in overrides.json is gone) — read via the public GraphQL endpoint instead.
+const SUI_GRAPHQL = process.env.SUI_GRAPHQL || "https://graphql.mainnet.sui.io/graphql";
 const NEAR_RPC = process.env.NEAR_RPC || RPC.Near || "https://free.rpc.fastnear.com";
 
 let rpcId = 0;
@@ -175,44 +175,43 @@ async function solanaCustody(leg: any) {
 
 // ---------- Sui ----------
 
+async function suiGql(query: string, variables: Record<string, unknown>): Promise<any> {
+  const res = await fetch(SUI_GRAPHQL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`sui graphql: HTTP ${res.status}`);
+  const j: any = await res.json();
+  if (j.errors?.length) throw new Error(`sui graphql: ${j.errors[0].message}`);
+  return j.data;
+}
+
 async function suiCustody(leg: any) {
-  let lastErr = "";
-  for (const url of SUI_RPCS) {
-    let obj: any, meta: any;
-    try {
-      [obj, meta] = await Promise.all([
-        rpc(url, "sui_getObject", [leg.manager, { showContent: true }]),
-        rpc(url, "suix_getCoinMetadata", [leg.token]),
-      ]);
-    } catch (e: any) {
-      lastErr = `${url}: ${e.message}`;
-      continue;
-    }
-    const fields = obj?.data?.content?.fields;
-    if (!fields) throw new Error(`no content for state object ${leg.manager}`);
-    return {
-      raw: BigInt(fields.balance),
-      decimals: meta?.decimals ?? 9,
-      note: fields.paused ? "PAUSED" : "",
-    };
-  }
-  throw new Error(`sui rpc unreachable: ${lastErr}`);
+  const d = await suiGql(
+    `query($id: SuiAddress!, $t: String!) {
+      object(address: $id) { asMoveObject { contents { json } } }
+      coinMetadata(coinType: $t) { decimals }
+    }`,
+    { id: leg.manager, t: leg.token }
+  );
+  const fields = d.object?.asMoveObject?.contents?.json;
+  if (!fields) throw new Error(`no content for state object ${leg.manager}`);
+  return {
+    raw: BigInt(fields.balance),
+    decimals: d.coinMetadata?.decimals ?? 9,
+    note: fields.paused ? "PAUSED" : "",
+  };
 }
 
 async function suiSupply(leg: any) {
-  let lastErr = "";
-  for (const url of SUI_RPCS) {
-    try {
-      const [sup, meta] = await Promise.all([
-        rpc(url, "suix_getTotalSupply", [leg.token]),
-        rpc(url, "suix_getCoinMetadata", [leg.token]),
-      ]);
-      return { raw: BigInt(sup.value), decimals: meta?.decimals ?? 9, note: "" };
-    } catch (e: any) {
-      lastErr = `${url}: ${e.message}`;
-    }
-  }
-  throw new Error(`sui rpc unreachable: ${lastErr}`);
+  const d = await suiGql(
+    `query($t: String!) { coinMetadata(coinType: $t) { decimals supply } }`,
+    { t: leg.token }
+  );
+  if (d.coinMetadata?.supply == null) throw new Error(`no supply for ${leg.token}`);
+  return { raw: BigInt(d.coinMetadata.supply), decimals: d.coinMetadata.decimals ?? 9, note: "" };
 }
 
 async function solanaSupply(leg: any) {

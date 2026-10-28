@@ -21,8 +21,8 @@
 # Sui-hub tokens likewise: the Hydration side via cast — manager peer is the
 # Sui State OBJECT ID, transceiver peer is the Sui transceiver's EMITTER CAP
 # id (Sui VAAs are emitted under the cap, not the state object) — and the
-# Sui side over JSON-RPC (sui_getObject + u16 dynamic fields of the peers
-# tables), no sui CLI needed.
+# Sui side over the public GraphQL endpoint (state objects + u16 dynamic
+# fields of the peers tables), no sui CLI needed.
 #
 # The EVM hub chain is read from deployment.json (Ethereum, Base, …) — its
 # RPC comes from hub_rpc() below; add a line there when a new hub chain lands.
@@ -35,7 +35,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 need_tools cast jq curl python3
 FAIL=0
 SOL_WH_ID=1   # wormhole chain id of Solana (fixed, not discoverable from the EVM side)
-SUI_WH_ID=21  # wormhole chain id of Sui (fixed, same reason; SUI_JSONRPC from _lib.sh)
+SUI_WH_ID=21  # wormhole chain id of Sui (fixed, same reason; SUI_GRAPHQL from _lib.sh)
 
 b32()   { printf '0x%064s' "${1#0x}" | tr ' ' '0'; }   # EVM address → wormhole bytes32
 lower() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
@@ -150,63 +150,64 @@ check_sol_hub() {
   ck "Solana transceiver peer PDA → Hydration transceiver" "$(b32 "$ht")" "$tpeer"
 }
 
-sui_rpc() {  # method params-json → response
-  curl -sS "$SUI_JSONRPC" -X POST -H 'Content-Type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" 2>/dev/null
+sui_gql() {  # query variables-json → response
+  curl -sS "$SUI_GRAPHQL" -X POST -H 'Content-Type: application/json' \
+    -d "{\"query\":$(jq -Rn --arg q "$1" '$q'),\"variables\":$2}" 2>/dev/null
 }
 
-# Sui-side reads over JSON-RPC: manager state (mode + peers table) and
+# Sui-side reads over GraphQL: manager state (mode + peers table) and
 # transceiver state (emitter cap + peers table); peers are u16-keyed dynamic
 # fields. Prints key=value lines: mode / manager_peer,dec / emitter / xcvr_peer.
 sui_side_peers() {  # manager_state_id xcvr_state_id peer_chain_id
-  python3 - "$1" "$2" "$3" "$SUI_JSONRPC" <<'PY'
-import sys, json, urllib.request
-state, xcvr, cid, rpc = sys.argv[1:5]
-def call(method, params):
-    req = urllib.request.Request(rpc, json.dumps({'jsonrpc':'2.0','id':1,
-        'method':method,'params':params}).encode(), {'Content-Type':'application/json'})
-    return json.load(urllib.request.urlopen(req)).get('result')
-def content_fields(oid):
-    r = call('sui_getObject', [oid, {'showContent': True}]) or {}
-    c = ((r.get('data') or {}).get('content') or {})
-    return c.get('fields', {})
-def unwrap(node):        # JSON-RPC nests structs as {type, fields:{…}}
-    return node.get('fields', node) if isinstance(node, dict) else {}
-def uid(node):           # UID renders as {id: "0x…"}
-    i = unwrap(node).get('id')
-    return i.get('id') if isinstance(i, dict) else i
-def find_bytes(node):    # first 32-long int list anywhere below (ExternalAddress)
-    if isinstance(node, list) and len(node) == 32 and all(isinstance(x, int) for x in node):
-        return bytes(node)
+  python3 - "$1" "$2" "$3" "$SUI_GRAPHQL" <<'PY'
+import sys, json, struct, base64, urllib.request
+state, xcvr, cid, url = sys.argv[1:5]
+def gql(query, variables):
+    req = urllib.request.Request(url, json.dumps({'query': query, 'variables': variables}).encode(),
+                                 {'Content-Type': 'application/json'})
+    r = json.load(urllib.request.urlopen(req))
+    if r.get('errors'): raise SystemExit('sui graphql: ' + r['errors'][0]['message'])
+    return r['data']
+def contents(oid):
+    d = gql('query($id: SuiAddress!) { object(address: $id) { asMoveObject { contents { json } } } }',
+            {'id': oid})
+    return (((d.get('object') or {}).get('asMoveObject') or {}).get('contents') or {}).get('json') or {}
+def find_bytes(node):    # first 32-byte vector anywhere below (ExternalAddress → base64 in GraphQL json)
+    if isinstance(node, str):
+        try: b = base64.b64decode(node, validate=True)
+        except Exception: return None
+        return b if len(b) == 32 else None
     vals = node.values() if isinstance(node, dict) else node if isinstance(node, list) else []
     for v in vals:
         b = find_bytes(v)
         if b: return b
     return None
-def peer_value(table):
-    tid = uid(table)
+def peer_value(table):   # Table UID renders as {id: "0x…", size}
+    tid = (table or {}).get('id')
     if not tid: return None
-    r = call('suix_getDynamicFieldObject', [tid, {'type': 'u16', 'value': cid}]) or {}
-    return (((r.get('data') or {}).get('content') or {}).get('fields') or {}).get('value')
-sf = content_fields(state)
-md = sf.get('mode')  # enum: {type, variant: "Locking", fields: {}} — variant sits BESIDE fields
-print('mode=' + ((md.get('variant') or md.get('@variant') or 'MISSING')
-                 if isinstance(md, dict) else str(md)))
+    name = base64.b64encode(struct.pack('<H', int(cid))).decode()  # u16 key, BCS = little-endian
+    d = gql('query($id: SuiAddress!, $k: Base64!) { address(address: $id) {'
+            ' dynamicField(name: {type: "u16", bcs: $k}) { value { ... on MoveValue { json } } } } }',
+            {'id': tid, 'k': name})
+    return ((((d.get('address') or {}).get('dynamicField') or {}).get('value')) or {}).get('json')
+sf = contents(state)
+md = sf.get('mode')  # enum: {"@variant": "Locking"}
+print('mode=' + (md.get('@variant', 'MISSING') if isinstance(md, dict) else str(md)))
 mp = peer_value(sf.get('peers'))
 if mp:
     b = find_bytes(mp)
-    dec = unwrap(mp).get('token_decimals', '?')
+    dec = mp.get('token_decimals', '?') if isinstance(mp, dict) else '?'
     print('manager_peer=%s,%s' % ('0x' + b.hex() if b else 'MISSING', dec))
 else:
     print('manager_peer=PEER_MISSING')
-xf = content_fields(xcvr)
-print('emitter=' + str(uid(xf.get('emitter_cap')) or 'MISSING'))
+xf = contents(xcvr)
+print('emitter=' + str((xf.get('emitter_cap') or {}).get('id') or 'MISSING'))
 xp = peer_value(xf.get('peers'))
 print('xcvr_peer=' + ('0x' + find_bytes(xp).hex() if xp and find_bytes(xp) else 'PEER_MISSING'))
 PY
 }
 
-# Sui-hub token: Hydration side via cast, Sui side via JSON-RPC. Note the
+# Sui-hub token: Hydration side via cast, Sui side via GraphQL. Note the
 # asymmetry: Hydration's manager peer = Sui state object id, but Hydration's
 # transceiver peer = the Sui transceiver's emitter cap id.
 check_sui_hub() {
@@ -221,7 +222,8 @@ check_sui_hub() {
   local hyd_id hdec sdec
   hyd_id=$(call "$hm" 'chainId()(uint16)' "$HYDRATION_RPC")
   hdec=$(call "$htok" 'decimals()(uint8)' "$HYDRATION_RPC")
-  sdec=$(sui_rpc suix_getCoinMetadata "[\"$stok\"]" | jq -r '.result.decimals // "RPC_FAILED"')
+  sdec=$(sui_gql 'query($t: String!) { coinMetadata(coinType: $t) { decimals } }' \
+           "{\"t\":\"$stok\"}" | jq -r '.data.coinMetadata.decimals // "RPC_FAILED"')
   echo "== $t  (Sui hub; wormhole chain ids: Sui=$SUI_WH_ID Hydration=$hyd_id)"
 
   # Sui side (also yields the emitter cap the Hydration side must point at)

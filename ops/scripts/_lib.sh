@@ -9,10 +9,10 @@ ETH_RPC="${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}"
 BASE_RPC="${BASE_RPC_URL:-https://mainnet.base.org}"
 HYDRATION_RPC="${HYDRATION_RPC:-https://hydration-rpc.n.dwellir.com}"
 SOLANA_RPC="${SOLANA_RPC:-https://api.mainnet-beta.solana.com}"
-# JSON-RPC for read-side scripts (_peering.sh) ONLY — public Sui fullnodes
-# dropped JSON-RPC (gRPC/GraphQL only), so this must be a provider that still
-# serves it. The ntt CLI itself talks gRPC to the public fullnode.
-SUI_JSONRPC="${SUI_JSONRPC:-https://autumn-flashy-liquid.sui-mainnet.quiknode.pro/20a018256175b53a0b6739bcf039b6070d00b904/}"
+# GraphQL for read-side scripts (_peering.sh) ONLY — Sui JSON-RPC is
+# deprecated on every public provider. The ntt CLI itself talks gRPC to the
+# public fullnode, so there is deliberately no Sui entry in overrides.json.
+SUI_GRAPHQL="${SUI_GRAPHQL:-https://graphql.mainnet.sui.io/graphql}"
 # Robinhood Chain: Arbitrum Orbit, EVM chainId 4663, native ETH gas.
 # Explorer robinhoodchain.blockscout.com sits behind Cloudflare — script
 # access needs a browser User-Agent; verification goes via sourcify.dev
@@ -59,7 +59,8 @@ check_cli() {
 }
 
 # CLI reads overrides.json from its cwd — pin RPCs in the NTT source root.
-# Sui entry is for the read-side ops scripts only (CLI talks gRPC itself).
+# No Sui entry: the CLI talks gRPC to the public fullnode, and a JSON-RPC URL
+# there breaks it.
 write_overrides() {
   cat > "$NTT_SRC/overrides.json" <<EOF
 {
@@ -68,7 +69,6 @@ write_overrides() {
     "Base":      { "rpc": "$BASE_RPC" },
     "Hydration": { "rpc": "$HYDRATION_RPC" },
     "Solana":    { "rpc": "$SOLANA_RPC" },
-    "Sui":       { "rpc": "$SUI_JSONRPC" },
     "Robinhood": { "rpc": "$ROBINHOOD_RPC" },
     "HyperEVM":  { "rpc": "$HYPEREVM_RPC" }
   }
