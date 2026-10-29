@@ -34,6 +34,11 @@ contract NttManagerWithPayload is NttManager {
 
     bytes32 private constant PAYLOAD_SLOT = bytes32(uint256(keccak256("ntt.payload")) - 1);
 
+    /// @dev The transceiver message encodes the manager message behind a uint16 length, and
+    ///      the manager message wraps the payload in 147 bytes of headers: 81 (NativeTokenTransfer)
+    ///      + 66 (NttManagerMessage). A longer payload passes the inner encoders but not that one.
+    uint256 private constant MAX_PAYLOAD_LENGTH = type(uint16).max - 147;
+
     struct _Payload {
         bytes data;
     }
@@ -59,7 +64,7 @@ contract NttManagerWithPayload is NttManager {
     /// @param recipient The recipient address.
     /// @param refundAddress The address to which a refund for unused gas is issued on the recipient chain.
     /// @param transceiverInstructions Additional instructions to be forwarded to the recipient chain.
-    /// @param payload The custom payload (at most 65535 bytes).
+    /// @param payload The custom payload (at most 65388 bytes).
     /// @return msgId The resulting message ID of the transfer
     function transferWithPayload(
         uint256 amount,
@@ -69,8 +74,8 @@ contract NttManagerWithPayload is NttManager {
         bytes memory transceiverInstructions,
         bytes memory payload
     ) external payable nonReentrant whenNotPaused returns (uint64 msgId) {
-        // fail before writing to storage; the encoder enforces the same bound
-        if (payload.length > type(uint16).max) {
+        // fail before writing to storage; the transceiver message encoder enforces the same bound
+        if (payload.length > MAX_PAYLOAD_LENGTH) {
             revert TransceiverStructs.PayloadTooLong(payload.length);
         }
         _Payload storage $ = _getPayloadStorage();

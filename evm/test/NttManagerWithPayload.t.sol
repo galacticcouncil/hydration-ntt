@@ -264,9 +264,27 @@ contract TestNttManagerWithPayload is Test {
     }
 
     function test_transferWithPayload_revertsWhenPayloadTooLong() public {
-        uint256 len = uint256(type(uint16).max) + 1;
+        // one byte over the limit that still fits the transceiver message
+        uint256 len = 65389;
         vm.expectRevert(abi.encodeWithSelector(TransceiverStructs.PayloadTooLong.selector, len));
         _transferWithPayload(amount, new bytes(len));
+    }
+
+    function test_transferWithPayload_maxPayloadFitsTransceiverMessage() public {
+        _transferWithPayload(amount, new bytes(65388));
+
+        // the wrapping a real transceiver applies (e.g. WormholeTransceiver._sendMessage)
+        bytes memory nttManagerMessage = sourceTransceiver.lastMessage();
+        assertEq(nttManagerMessage.length, type(uint16).max);
+        TransceiverStructs.encodeTransceiverMessage(
+            TEST_TRANSCEIVER_PAYLOAD_PREFIX,
+            TransceiverStructs.TransceiverMessage(
+                toWormholeFormat(address(source)),
+                toWormholeFormat(address(dest)),
+                nttManagerMessage,
+                new bytes(0)
+            )
+        );
     }
 
     function test_upgradeFromStandardManager() public {
