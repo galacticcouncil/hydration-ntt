@@ -68,6 +68,21 @@ contract CapturingTransceiver is Transceiver {
     }
 }
 
+/// @dev Integrator contract calling the manager, like IntentEmitter does.
+contract PayloadCaller {
+    function send(
+        NttManagerWithPayload manager,
+        uint256 amount,
+        uint16 recipientChain,
+        bytes32 recipient,
+        bytes memory payload
+    ) external returns (uint64) {
+        IERC20(manager.token()).transferFrom(msg.sender, address(this), amount);
+        IERC20(manager.token()).approve(address(manager), amount);
+        return manager.transferWithPayload(amount, recipientChain, recipient, payload);
+    }
+}
+
 contract TestNttManagerWithPayload is Test {
     using TrimmedAmountLib for TrimmedAmount;
 
@@ -76,7 +91,8 @@ contract TestNttManagerWithPayload is Test {
     uint16 constant DEST_CHAIN_ID = 2;
     uint64 constant RATE_LIMIT_DURATION = 1 days;
     bytes4 constant TEST_TRANSCEIVER_PAYLOAD_PREFIX = 0x99455454;
-    bytes32 constant PAYLOAD_SLOT = bytes32(uint256(keccak256("ntt.payload")) - 1);
+    // prefix(4) + decimals(1) + amount(8) + sourceToken(32) + to(32) + toChain(2), no length field
+    uint256 constant STOCK_NTT_LENGTH = 79;
 
     DummyTokenMintAndBurn sourceToken;
     DummyToken destToken;
@@ -94,9 +110,8 @@ contract TestNttManagerWithPayload is Test {
         destToken = new DummyToken();
         amount = 5 * 10 ** sourceToken.decimals();
 
-        source = NttManagerWithPayload(
-            address(new ERC1967Proxy(address(_sourceImplementation()), ""))
-        );
+        source =
+            NttManagerWithPayload(address(new ERC1967Proxy(address(_sourceImplementation()), "")));
         source.initialize();
         sourceTransceiver = new CapturingTransceiver(address(source));
         source.setTransceiver(address(sourceTransceiver));
@@ -132,7 +147,11 @@ contract TestNttManagerWithPayload is Test {
 
     function _sourceImplementation() internal returns (NttManagerWithPayload) {
         return new NttManagerWithPayload(
-            address(sourceToken), IManagerBase.Mode.BURNING, SOURCE_CHAIN_ID, RATE_LIMIT_DURATION, false
+            address(sourceToken),
+            IManagerBase.Mode.BURNING,
+            SOURCE_CHAIN_ID,
+            RATE_LIMIT_DURATION,
+            false
         );
     }
 
@@ -145,14 +164,8 @@ contract TestNttManagerWithPayload is Test {
         bytes memory payload
     ) internal returns (uint64) {
         vm.prank(user);
-        return source.transferWithPayload(
-            value,
-            DEST_CHAIN_ID,
-            toWormholeFormat(recipient),
-            toWormholeFormat(user),
-            new bytes(1),
-            payload
-        );
+        return
+            source.transferWithPayload(value, DEST_CHAIN_ID, toWormholeFormat(recipient), payload);
     }
 
     function _lastSent()
@@ -178,17 +191,14 @@ contract TestNttManagerWithPayload is Test {
         destTransceiver.receiveMessage(encoded);
     }
 
-    function _assertStashCleared() internal {
-        assertEq(vm.load(address(source), PAYLOAD_SLOT), bytes32(0));
-        assertEq(vm.load(address(source), keccak256(abi.encode(PAYLOAD_SLOT))), bytes32(0));
-    }
-
     function test_transferWithPayload_encodesPayload() public {
         bytes memory payload = _intentPayload();
         uint64 seq = _transferWithPayload(amount, payload);
 
-        (TransceiverStructs.NttManagerMessage memory m, TransceiverStructs.NativeTokenTransfer memory ntt)
-        = _lastSent();
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
         assertEq(m.id, bytes32(uint256(seq)));
         assertEq(m.sender, toWormholeFormat(user));
         assertEq(ntt.additionalPayload, payload);
@@ -199,28 +209,69 @@ contract TestNttManagerWithPayload is Test {
 
         assertEq(sourceToken.balanceOf(user), 0);
         assertEq(sourceToken.totalSupply(), 0, "burning mode should burn");
-        _assertStashCleared();
+    }
+
+    function test_transferWithPayload_viaIntegratorContract() public {
+        PayloadCaller caller = new PayloadCaller();
+        bytes memory payload = _intentPayload();
+
+        vm.startPrank(user);
+        sourceToken.approve(address(caller), amount);
+        caller.send(source, amount, DEST_CHAIN_ID, toWormholeFormat(recipient), payload);
+        vm.stopPrank();
+
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
+        assertEq(m.sender, toWormholeFormat(address(caller)));
+        assertEq(ntt.additionalPayload, payload);
     }
 
     function test_transfer_keepsStockWireFormat() public {
-        // a payload transfer must not leak into a later plain transfer
         _transferWithPayload(amount / 2, _intentPayload());
 
         vm.prank(user);
         source.transfer(amount / 2, DEST_CHAIN_ID, toWormholeFormat(recipient));
 
-        (TransceiverStructs.NttManagerMessage memory m, TransceiverStructs.NativeTokenTransfer memory ntt)
-        = _lastSent();
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
         assertEq(ntt.additionalPayload.length, 0);
-        // prefix(4) + decimals(1) + amount(8) + sourceToken(32) + to(32) + toChain(2): no length field
-        assertEq(m.payload.length, 79);
+        assertEq(m.payload.length, STOCK_NTT_LENGTH);
+    }
+
+    function test_completeOutboundQueuedTransfer_keepsStockWireFormat() public {
+        source.setOutboundLimit(amount / 2);
+
+        vm.prank(user);
+        uint64 seq = source.transfer(
+            amount,
+            DEST_CHAIN_ID,
+            toWormholeFormat(recipient),
+            toWormholeFormat(user),
+            true,
+            new bytes(1)
+        );
+        assertEq(sourceTransceiver.lastMessage().length, 0, "transfer should be queued");
+
+        vm.warp(block.timestamp + RATE_LIMIT_DURATION + 1);
+        source.completeOutboundQueuedTransfer(seq);
+
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
+        assertEq(ntt.additionalPayload.length, 0);
+        assertEq(m.payload.length, STOCK_NTT_LENGTH);
     }
 
     function test_transferWithPayload_emptyPayloadMatchesPlainTransfer() public {
-        _transferWithPayload(amount / 2, "");
-        (, TransceiverStructs.NativeTokenTransfer memory ntt) = _lastSent();
-        assertEq(ntt.additionalPayload.length, 0);
-        assertEq(TransceiverStructs.encodeNativeTokenTransfer(ntt).length, 79);
+        _transferWithPayload(amount, "");
+
+        (TransceiverStructs.NttManagerMessage memory m,) = _lastSent();
+        assertEq(m.payload.length, STOCK_NTT_LENGTH);
     }
 
     function test_transferWithPayload_roundTrip() public {
@@ -324,12 +375,7 @@ contract TestNttManagerWithPayload is Test {
         bytes memory payload = _intentPayload();
         vm.prank(user);
         uint64 seq = upgraded.transferWithPayload(
-            amount / 2,
-            DEST_CHAIN_ID,
-            toWormholeFormat(recipient),
-            toWormholeFormat(user),
-            new bytes(1),
-            payload
+            amount / 2, DEST_CHAIN_ID, toWormholeFormat(recipient), payload
         );
         assertEq(seq, 1);
 
@@ -346,7 +392,6 @@ contract TestNttManagerWithPayload is Test {
 
         (, TransceiverStructs.NativeTokenTransfer memory ntt) = _lastSent();
         assertEq(ntt.additionalPayload, payload);
-        _assertStashCleared();
 
         _deliverToDest();
         assertEq(destToken.balanceOf(recipient), amount);
