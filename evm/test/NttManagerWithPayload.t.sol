@@ -89,10 +89,13 @@ contract TestNttManagerWithPayload is Test {
     // source mirrors Hydration (burning spoke), destination mirrors the hub (locking)
     uint16 constant SOURCE_CHAIN_ID = 1;
     uint16 constant DEST_CHAIN_ID = 2;
+    uint16 constant SOLANA_CHAIN_ID = 1;
+    uint16 constant HYDRATION_CHAIN_ID = 73;
     uint64 constant RATE_LIMIT_DURATION = 1 days;
     bytes4 constant TEST_TRANSCEIVER_PAYLOAD_PREFIX = 0x99455454;
     // prefix(4) + decimals(1) + amount(8) + sourceToken(32) + to(32) + toChain(2), no length field
     uint256 constant STOCK_NTT_LENGTH = 79;
+    uint256 constant MAX_PAYLOAD_LENGTH = 256;
 
     DummyTokenMintAndBurn sourceToken;
     DummyToken destToken;
@@ -314,28 +317,82 @@ contract TestNttManagerWithPayload is Test {
         _transferWithPayload(amount, _intentPayload());
     }
 
+    /// @dev A payload manager on Hydration (chain 73) with a Solana (chain 1) peer.
+    function _hydrationManagerWithSolanaPeer()
+        internal
+        returns (NttManagerWithPayload manager, CapturingTransceiver transceiver)
+    {
+        manager = NttManagerWithPayload(
+            address(
+                new ERC1967Proxy(
+                    address(
+                        new NttManagerWithPayload(
+                            address(sourceToken),
+                            IManagerBase.Mode.BURNING,
+                            HYDRATION_CHAIN_ID,
+                            RATE_LIMIT_DURATION,
+                            false
+                        )
+                    ),
+                    ""
+                )
+            )
+        );
+        manager.initialize();
+        transceiver = new CapturingTransceiver(address(manager));
+        manager.setTransceiver(address(transceiver));
+        manager.setPeer(SOLANA_CHAIN_ID, bytes32(uint256(0x50)), 9, type(uint64).max);
+
+        vm.prank(user);
+        sourceToken.approve(address(manager), type(uint256).max);
+    }
+
+    function test_transferWithPayload_revertsForSolana() public {
+        (NttManagerWithPayload manager,) = _hydrationManagerWithSolanaPeer();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                NttManagerWithPayload.PayloadUnsupportedChain.selector, SOLANA_CHAIN_ID
+            )
+        );
+        vm.prank(user);
+        manager.transferWithPayload(
+            amount, SOLANA_CHAIN_ID, toWormholeFormat(recipient), _intentPayload()
+        );
+        assertEq(sourceToken.balanceOf(user), amount, "nothing burned");
+    }
+
+    function test_transfer_toSolanaStillWorks() public {
+        (NttManagerWithPayload manager, CapturingTransceiver transceiver) =
+            _hydrationManagerWithSolanaPeer();
+
+        vm.prank(user);
+        manager.transfer(amount, SOLANA_CHAIN_ID, toWormholeFormat(recipient));
+
+        TransceiverStructs.NttManagerMessage memory m =
+            TransceiverStructs.parseNttManagerMessage(transceiver.lastMessage());
+        assertEq(m.payload.length, STOCK_NTT_LENGTH);
+        assertEq(TransceiverStructs.parseNativeTokenTransfer(m.payload).toChain, SOLANA_CHAIN_ID);
+    }
+
     function test_transferWithPayload_revertsWhenPayloadTooLong() public {
-        // one byte over the limit that still fits the transceiver message
-        uint256 len = 65389;
+        uint256 len = MAX_PAYLOAD_LENGTH + 1;
         vm.expectRevert(abi.encodeWithSelector(TransceiverStructs.PayloadTooLong.selector, len));
         _transferWithPayload(amount, new bytes(len));
     }
 
-    function test_transferWithPayload_maxPayloadFitsTransceiverMessage() public {
-        _transferWithPayload(amount, new bytes(65388));
+    function test_transferWithPayload_maxPayload() public {
+        bytes memory payload = new bytes(MAX_PAYLOAD_LENGTH);
+        payload[MAX_PAYLOAD_LENGTH - 1] = 0xff;
+        _transferWithPayload(amount, payload);
 
-        // the wrapping a real transceiver applies (e.g. WormholeTransceiver._sendMessage)
-        bytes memory nttManagerMessage = sourceTransceiver.lastMessage();
-        assertEq(nttManagerMessage.length, type(uint16).max);
-        TransceiverStructs.encodeTransceiverMessage(
-            TEST_TRANSCEIVER_PAYLOAD_PREFIX,
-            TransceiverStructs.TransceiverMessage(
-                toWormholeFormat(address(source)),
-                toWormholeFormat(address(dest)),
-                nttManagerMessage,
-                new bytes(0)
-            )
-        );
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
+        assertEq(ntt.additionalPayload, payload);
+        // NativeTokenTransfer header (79) + payload length field (2) + payload
+        assertEq(m.payload.length, STOCK_NTT_LENGTH + 2 + MAX_PAYLOAD_LENGTH);
     }
 
     function test_upgradeFromStandardManager() public {
@@ -387,7 +444,7 @@ contract TestNttManagerWithPayload is Test {
     function testFuzz_transferWithPayload(
         bytes memory payload
     ) public {
-        vm.assume(payload.length <= 1024);
+        vm.assume(payload.length <= MAX_PAYLOAD_LENGTH);
         _transferWithPayload(amount, payload);
 
         (, TransceiverStructs.NativeTokenTransfer memory ntt) = _lastSent();

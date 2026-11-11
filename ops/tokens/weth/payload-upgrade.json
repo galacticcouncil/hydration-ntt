@@ -1,0 +1,15 @@
+{
+  "manager": "0xB5cEf790D52A57fa619eD96eDd64c5328F3DCFb7",
+  "previousImplementation": "0xc66B0b5A4Dd45A2A668e8c194F8a3dAeA5D8a542",
+  "implementation": "0xCa28342e43eF9727de4Ad525D91eDA1739A57d1a",
+  "transceiverStructs": "0x37745928d3e6fcc766ab965a3e3114c0b00d2745",
+  "deployTx": "0xe3a0d8c8ddede7d57af3bc0a2691b784ec498dc55c3377ca363de78934d52f63",
+  "commit": "f81c823ac29667ff6f84ad3791986dd88ab2575f",
+  "constructorArgs": {
+    "token": "0x0000000000000000000000000000000100000014",
+    "mode": 1,
+    "chainId": 73,
+    "rateLimitDuration": 86400,
+    "skipRateLimiting": false
+  }
+}

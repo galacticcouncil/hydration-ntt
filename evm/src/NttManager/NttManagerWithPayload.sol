@@ -16,7 +16,9 @@ import "./NttManager.sol";
 ///         for relayers and contracts that parse the VAA themselves.
 ///
 /// @dev    The destination chain's NttManager must be able to decode an additional
-///         payload, i.e. this variant is meant for EVM <> EVM deployments.
+///         payload, i.e. this variant is meant for EVM <> EVM deployments. Payload
+///         transfers to Solana revert: its NTT transceiver (3.0.0) decodes with
+///         `EmptyPayload`, so a payload VAA never redeems there. Plain `transfer` is unaffected.
 ///
 /// @dev    The payload is not stored: `_prepareNativeTokenTransfer` decodes it from the
 ///         calldata of the ongoing `transferWithPayload` call. Every other path into the
@@ -31,10 +33,18 @@ contract NttManagerWithPayload is NttManager {
         bool _skipRateLimiting
     ) NttManager(_token, _mode, _chainId, _rateLimitDuration, _skipRateLimiting) {}
 
-    /// @dev The transceiver message encodes the manager message behind a uint16 length, and
-    ///      the manager message wraps the payload in 147 bytes of headers: 81 (NativeTokenTransfer)
-    ///      + 66 (NttManagerMessage). A longer payload passes the inner encoders but not that one.
-    uint256 private constant MAX_PAYLOAD_LENGTH = type(uint16).max - 147;
+    /// @dev Well below what the transceiver message could encode (65388 bytes), so that a
+    ///      payload VAA stays small enough for every chain to verify and store. 256 bytes hold
+    ///      a packed payload with three 32-byte addresses, two amounts, a deadline, an id and a
+    ///      65-byte signature.
+    uint256 private constant MAX_PAYLOAD_LENGTH = 256;
+
+    /// @dev Wormhole chain id of Solana.
+    uint16 private constant SOLANA_CHAIN_ID = 1;
+
+    /// @notice The recipient chain cannot redeem a transfer that carries a payload.
+    /// @param chainId The Wormhole chain id of the recipient chain.
+    error PayloadUnsupportedChain(uint16 chainId);
 
     // ==================== External Interface ===============================================
 
@@ -44,11 +54,12 @@ contract NttManagerWithPayload is NttManager {
     ///      and no transceiver instructions are passed.
     ///      Payload transfers are never queued: if the outbound limit is hit, the call reverts
     ///      with `NotEnoughCapacity`, since a queued transfer would not retain the payload.
+    ///      Reverts with `PayloadUnsupportedChain` when the recipient chain is Solana.
     ///      Recommended that the first 4 bytes of the payload are a unique prefix.
     /// @param amount The amount to transfer.
     /// @param recipientChain The Wormhole chain ID for the destination.
     /// @param recipient The recipient address.
-    /// @param payload The custom payload (at most 65388 bytes).
+    /// @param payload The custom payload (at most 256 bytes).
     /// @return msgId The resulting message ID of the transfer
     function transferWithPayload(
         uint256 amount,
@@ -56,7 +67,9 @@ contract NttManagerWithPayload is NttManager {
         bytes32 recipient,
         bytes calldata payload
     ) external payable nonReentrant whenNotPaused returns (uint64 msgId) {
-        // the transceiver message encoder enforces the same bound, but only on a real transceiver
+        if (recipientChain == SOLANA_CHAIN_ID) {
+            revert PayloadUnsupportedChain(recipientChain);
+        }
         if (payload.length > MAX_PAYLOAD_LENGTH) {
             revert TransceiverStructs.PayloadTooLong(payload.length);
         }
