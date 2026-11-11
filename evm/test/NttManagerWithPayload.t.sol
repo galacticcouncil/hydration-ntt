@@ -95,6 +95,7 @@ contract TestNttManagerWithPayload is Test {
     bytes4 constant TEST_TRANSCEIVER_PAYLOAD_PREFIX = 0x99455454;
     // prefix(4) + decimals(1) + amount(8) + sourceToken(32) + to(32) + toChain(2), no length field
     uint256 constant STOCK_NTT_LENGTH = 79;
+    uint256 constant MAX_PAYLOAD_LENGTH = 256;
 
     DummyTokenMintAndBurn sourceToken;
     DummyToken destToken;
@@ -375,27 +376,23 @@ contract TestNttManagerWithPayload is Test {
     }
 
     function test_transferWithPayload_revertsWhenPayloadTooLong() public {
-        // one byte over the limit that still fits the transceiver message
-        uint256 len = 65389;
+        uint256 len = MAX_PAYLOAD_LENGTH + 1;
         vm.expectRevert(abi.encodeWithSelector(TransceiverStructs.PayloadTooLong.selector, len));
         _transferWithPayload(amount, new bytes(len));
     }
 
-    function test_transferWithPayload_maxPayloadFitsTransceiverMessage() public {
-        _transferWithPayload(amount, new bytes(65388));
+    function test_transferWithPayload_maxPayload() public {
+        bytes memory payload = new bytes(MAX_PAYLOAD_LENGTH);
+        payload[MAX_PAYLOAD_LENGTH - 1] = 0xff;
+        _transferWithPayload(amount, payload);
 
-        // the wrapping a real transceiver applies (e.g. WormholeTransceiver._sendMessage)
-        bytes memory nttManagerMessage = sourceTransceiver.lastMessage();
-        assertEq(nttManagerMessage.length, type(uint16).max);
-        TransceiverStructs.encodeTransceiverMessage(
-            TEST_TRANSCEIVER_PAYLOAD_PREFIX,
-            TransceiverStructs.TransceiverMessage(
-                toWormholeFormat(address(source)),
-                toWormholeFormat(address(dest)),
-                nttManagerMessage,
-                new bytes(0)
-            )
-        );
+        (
+            TransceiverStructs.NttManagerMessage memory m,
+            TransceiverStructs.NativeTokenTransfer memory ntt
+        ) = _lastSent();
+        assertEq(ntt.additionalPayload, payload);
+        // NativeTokenTransfer header (79) + payload length field (2) + payload
+        assertEq(m.payload.length, STOCK_NTT_LENGTH + 2 + MAX_PAYLOAD_LENGTH);
     }
 
     function test_upgradeFromStandardManager() public {
@@ -447,7 +444,7 @@ contract TestNttManagerWithPayload is Test {
     function testFuzz_transferWithPayload(
         bytes memory payload
     ) public {
-        vm.assume(payload.length <= 1024);
+        vm.assume(payload.length <= MAX_PAYLOAD_LENGTH);
         _transferWithPayload(amount, payload);
 
         (, TransceiverStructs.NativeTokenTransfer memory ntt) = _lastSent();

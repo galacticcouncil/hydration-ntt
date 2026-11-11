@@ -33,10 +33,11 @@ contract NttManagerWithPayload is NttManager {
         bool _skipRateLimiting
     ) NttManager(_token, _mode, _chainId, _rateLimitDuration, _skipRateLimiting) {}
 
-    /// @dev The transceiver message encodes the manager message behind a uint16 length, and
-    ///      the manager message wraps the payload in 147 bytes of headers: 81 (NativeTokenTransfer)
-    ///      + 66 (NttManagerMessage). A longer payload passes the inner encoders but not that one.
-    uint256 private constant MAX_PAYLOAD_LENGTH = type(uint16).max - 147;
+    /// @dev Well below what the transceiver message could encode (65388 bytes), so that a
+    ///      payload VAA stays small enough for every chain to verify and store. 256 bytes hold
+    ///      a packed payload with three 32-byte addresses, two amounts, a deadline, an id and a
+    ///      65-byte signature.
+    uint256 private constant MAX_PAYLOAD_LENGTH = 256;
 
     /// @dev Wormhole chain id of Solana.
     uint16 private constant SOLANA_CHAIN_ID = 1;
@@ -58,7 +59,7 @@ contract NttManagerWithPayload is NttManager {
     /// @param amount The amount to transfer.
     /// @param recipientChain The Wormhole chain ID for the destination.
     /// @param recipient The recipient address.
-    /// @param payload The custom payload (at most 65388 bytes).
+    /// @param payload The custom payload (at most 256 bytes).
     /// @return msgId The resulting message ID of the transfer
     function transferWithPayload(
         uint256 amount,
@@ -69,7 +70,6 @@ contract NttManagerWithPayload is NttManager {
         if (recipientChain == SOLANA_CHAIN_ID) {
             revert PayloadUnsupportedChain(recipientChain);
         }
-        // the transceiver message encoder enforces the same bound, but only on a real transceiver
         if (payload.length > MAX_PAYLOAD_LENGTH) {
             revert TransceiverStructs.PayloadTooLong(payload.length);
         }
