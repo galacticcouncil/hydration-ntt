@@ -198,9 +198,9 @@ export function createAddChainCommand(
         (c) => c.mode === "locking"
       );
 
-      if (existsLocking) {
+      if (existsLocking && process.env["WL_NTT_ALLOW_SECOND_HUB"] !== "1") {
         if (mode && mode === "locking") {
-          console.error("Only one locking chain is allowed");
+          console.error("Only one locking chain is allowed (set WL_NTT_ALLOW_SECOND_HUB=1 for a deliberate dual-hub deployment)");
           process.exit(1);
         }
         mode = "burning";
