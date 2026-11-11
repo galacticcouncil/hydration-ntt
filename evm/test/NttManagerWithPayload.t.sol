@@ -89,6 +89,8 @@ contract TestNttManagerWithPayload is Test {
     // source mirrors Hydration (burning spoke), destination mirrors the hub (locking)
     uint16 constant SOURCE_CHAIN_ID = 1;
     uint16 constant DEST_CHAIN_ID = 2;
+    uint16 constant SOLANA_CHAIN_ID = 1;
+    uint16 constant HYDRATION_CHAIN_ID = 73;
     uint64 constant RATE_LIMIT_DURATION = 1 days;
     bytes4 constant TEST_TRANSCEIVER_PAYLOAD_PREFIX = 0x99455454;
     // prefix(4) + decimals(1) + amount(8) + sourceToken(32) + to(32) + toChain(2), no length field
@@ -312,6 +314,64 @@ contract TestNttManagerWithPayload is Test {
             abi.encodeWithSelector(PausableUpgradeable.RequireContractIsNotPaused.selector)
         );
         _transferWithPayload(amount, _intentPayload());
+    }
+
+    /// @dev A payload manager on Hydration (chain 73) with a Solana (chain 1) peer.
+    function _hydrationManagerWithSolanaPeer()
+        internal
+        returns (NttManagerWithPayload manager, CapturingTransceiver transceiver)
+    {
+        manager = NttManagerWithPayload(
+            address(
+                new ERC1967Proxy(
+                    address(
+                        new NttManagerWithPayload(
+                            address(sourceToken),
+                            IManagerBase.Mode.BURNING,
+                            HYDRATION_CHAIN_ID,
+                            RATE_LIMIT_DURATION,
+                            false
+                        )
+                    ),
+                    ""
+                )
+            )
+        );
+        manager.initialize();
+        transceiver = new CapturingTransceiver(address(manager));
+        manager.setTransceiver(address(transceiver));
+        manager.setPeer(SOLANA_CHAIN_ID, bytes32(uint256(0x50)), 9, type(uint64).max);
+
+        vm.prank(user);
+        sourceToken.approve(address(manager), type(uint256).max);
+    }
+
+    function test_transferWithPayload_revertsForSolana() public {
+        (NttManagerWithPayload manager,) = _hydrationManagerWithSolanaPeer();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                NttManagerWithPayload.PayloadUnsupportedChain.selector, SOLANA_CHAIN_ID
+            )
+        );
+        vm.prank(user);
+        manager.transferWithPayload(
+            amount, SOLANA_CHAIN_ID, toWormholeFormat(recipient), _intentPayload()
+        );
+        assertEq(sourceToken.balanceOf(user), amount, "nothing burned");
+    }
+
+    function test_transfer_toSolanaStillWorks() public {
+        (NttManagerWithPayload manager, CapturingTransceiver transceiver) =
+            _hydrationManagerWithSolanaPeer();
+
+        vm.prank(user);
+        manager.transfer(amount, SOLANA_CHAIN_ID, toWormholeFormat(recipient));
+
+        TransceiverStructs.NttManagerMessage memory m =
+            TransceiverStructs.parseNttManagerMessage(transceiver.lastMessage());
+        assertEq(m.payload.length, STOCK_NTT_LENGTH);
+        assertEq(TransceiverStructs.parseNativeTokenTransfer(m.payload).toChain, SOLANA_CHAIN_ID);
     }
 
     function test_transferWithPayload_revertsWhenPayloadTooLong() public {
